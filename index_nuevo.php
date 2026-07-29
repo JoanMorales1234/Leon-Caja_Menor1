@@ -1,0 +1,901 @@
+<?php
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/helpers.php';
+$pdo = getDb();
+
+$message = null;
+$type = 'success';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        if (!isset($_POST['action'])) throw new Exception('Acción no definida.');
+
+        switch ($_POST['action']) {
+
+            case 'nueva_caja':
+                $tipoCrear = $_POST['tipo'] ?? '';
+                if (!in_array($tipoCrear, ['menor', 'mayor'])) throw new Exception('Tipo de caja inválido.');
+                $holidays = loadHolidays($pdo);
+                $fechaCaja = calculateCajaDate(date('Y-m-d'), $holidays);
+                if (!$fechaCaja) throw new Exception('Hoy es domingo. No se puede generar caja.');
+                if (getOpenCaja($pdo, $tipoCrear)) throw new Exception('Ya hay una caja ' . $tipoCrear . ' abierta.');
+                $stmt = $pdo->prepare('SELECT id FROM cajas WHERE tipo_caja = ? AND fecha_caja = ?');
+                $stmt->execute([$tipoCrear, $fechaCaja]);
+                if ($stmt->fetch()) throw new Exception('Ya existe una caja ' . $tipoCrear . ' cerrada para la fecha ' . $fechaCaja . '.');
+                $valorInicial = getLastClosedSaldo($pdo, $tipoCrear);
+                $stmt = $pdo->prepare('INSERT INTO cajas (tipo_caja, fecha_caja, valor_inicial) VALUES (?, ?, ?)');
+                $stmt->execute([$tipoCrear, $fechaCaja, $valorInicial]);
+                recalculateCajaFinal($pdo, $pdo->lastInsertId());
+                $message = 'Caja ' . ucfirst($tipoCrear) . ' abierta correctamente para la fecha ' . $fechaCaja . '.';
+                break;
+
+            case 'agregar_gasto':
+                $cajaId = intval($_POST['caja_id'] ?? 0);
+                $stmt = $pdo->prepare('SELECT * FROM cajas WHERE id = ? AND estado = "abierta"');
+                $stmt->execute([$cajaId]);
+                $caja = $stmt->fetch();
+                if (!$caja) {
+                    $tipoCaja = $_POST['tipo_caja'] ?? 'menor';
+                    $caja = getOpenCaja($pdo, $tipoCaja);
+                    if ($caja) $cajaId = (int)$caja['id'];
+                }
+                if (!$caja) throw new Exception('Caja no encontrada o no está abierta.');
+                $valor = floatval($_POST['valor'] ?? 0);
+                $tipoCaja = $caja['tipo_caja'];
+                if ($tipoCaja === 'menor' && $valor > 50000) throw new Exception('El valor excede $50.000. Usa Caja Mayor para este gasto.');
+                if ($tipoCaja === 'mayor' && $valor <= 50000) throw new Exception('El valor debe ser mayor a $50.000. Usa Caja Menor para este gasto.');
+                $soporteVal = $_POST['soporte'] ?: null;
+                if (isset($_FILES['soporte_foto']) && $_FILES['soporte_foto']['error'] === UPLOAD_ERR_OK) {
+                    $soporteVal = handleFotoUpload($_FILES['soporte_foto']);
+                }
+                $stmt = $pdo->prepare('INSERT INTO gastos (caja_id, empleado_id, proveedor_id, fecha_gasto, descripcion, valor, tipo_soporte, soporte) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->execute([
+                    $cajaId,
+                    $_POST['empleado_id'] ?: null,
+                    $_POST['proveedor_id'] ?: null,
+                    $_POST['fecha_gasto'] ?: date('Y-m-d'),
+                    $_POST['descripcion'],
+                    $valor,
+                    $_POST['tipo_soporte'] ?: 'otro',
+                    $soporteVal,
+                ]);
+                recalculateCajaFinal($pdo, $cajaId);
+                $message = 'Gasto agregado a caja ' . strtoupper($tipoCaja) . '.';
+                break;
+
+            case 'editar_gasto':
+                $gastoId = intval($_POST['id']);
+                $nuevoValor = floatval($_POST['valor']);
+                $stmt = $pdo->prepare('SELECT g.*, c.tipo_caja FROM gastos g JOIN cajas c ON g.caja_id = c.id WHERE g.id = ?');
+                $stmt->execute([$gastoId]);
+                $gastoActual = $stmt->fetch();
+                if (!$gastoActual) throw new Exception('Gasto no encontrado.');
+                $tipoCaja = $gastoActual['tipo_caja'];
+                if ($tipoCaja === 'menor' && $nuevoValor > 50000) throw new Exception('El valor excede $50.000. Este gasto pertenece a Caja Menor.');
+                if ($tipoCaja === 'mayor' && $nuevoValor <= 50000) throw new Exception('El valor debe ser mayor a $50.000. Este gasto pertenece a Caja Mayor.');
+                $soporteVal = $_POST['soporte'] ?? $gastoActual['soporte'];
+                if (isset($_FILES['soporte_foto']) && $_FILES['soporte_foto']['error'] === UPLOAD_ERR_OK) {
+                    $soporteVal = handleFotoUpload($_FILES['soporte_foto']);
+                }
+                $stmt = $pdo->prepare('UPDATE gastos SET empleado_id = ?, proveedor_id = ?, fecha_gasto = ?, descripcion = ?, valor = ?, tipo_soporte = ?, soporte = ? WHERE id = ?');
+                $stmt->execute([$_POST['empleado_id'] ?: null, $_POST['proveedor_id'] ?: null, $_POST['fecha_gasto'], $_POST['descripcion'], $nuevoValor, $_POST['tipo_soporte'] ?: 'otro', $soporteVal, $gastoId]);
+                recalculateCajaFinal($pdo, $gastoActual['caja_id']);
+                $message = 'Gasto actualizado en caja ' . strtoupper($tipoCaja) . '.';
+                break;
+
+            case 'eliminar_gasto':
+                $stmt = $pdo->prepare('SELECT caja_id FROM gastos WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $gasto = $stmt->fetch();
+                if (!$gasto) throw new Exception('Gasto no encontrado.');
+                $stmt = $pdo->prepare('DELETE FROM gastos WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                recalculateCajaFinal($pdo, $gasto['caja_id']);
+                $message = 'Gasto eliminado.';
+                break;
+
+            case 'agregar_reintegro':
+                $cajaId = intval($_POST['caja_id'] ?? 0);
+                $valor = floatval($_POST['valor_reintegro'] ?? 0);
+                if ($cajaId <= 0 || $valor <= 0) throw new Exception('Caja o valor inválidos.');
+                $stmt = $pdo->prepare('SELECT id FROM cajas WHERE id = ? AND estado = "abierta"');
+                $stmt->execute([$cajaId]);
+                if (!$stmt->fetch()) throw new Exception('Caja no encontrada o no está abierta.');
+                $stmt = $pdo->prepare('INSERT INTO reintegros (caja_id, valor, descripcion, soporte, fecha_reintegro) VALUES (?, ?, ?, ?, ?)');
+                $stmt->execute([$cajaId, $valor, $_POST['descripcion_reintegro'] ?: null, $_POST['soporte_reintegro'] ?: null, $_POST['fecha_reintegro'] ?: date('Y-m-d')]);
+                recalculateCajaFinal($pdo, $cajaId);
+                $message = 'Reintegro agregado.';
+                break;
+
+            case 'editar_reintegro':
+                $reintegroId = intval($_POST['id']);
+                $stmt = $pdo->prepare('SELECT * FROM reintegros WHERE id = ?');
+                $stmt->execute([$reintegroId]);
+                $reintegro = $stmt->fetch();
+                if (!$reintegro) throw new Exception('Reintegro no encontrado.');
+                $stmt = $pdo->prepare('UPDATE reintegros SET valor = ?, descripcion = ?, soporte = ?, fecha_reintegro = ? WHERE id = ?');
+                $stmt->execute([floatval($_POST['valor_reintegro']), $_POST['descripcion_reintegro'] ?: null, $_POST['soporte_reintegro'] ?: null, $_POST['fecha_reintegro'] ?: date('Y-m-d'), $reintegroId]);
+                recalculateCajaFinal($pdo, $reintegro['caja_id']);
+                $message = 'Reintegro actualizado.';
+                break;
+
+            case 'eliminar_reintegro':
+                $stmt = $pdo->prepare('SELECT caja_id FROM reintegros WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $reintegro = $stmt->fetch();
+                if (!$reintegro) throw new Exception('Reintegro no encontrado.');
+                $stmt = $pdo->prepare('DELETE FROM reintegros WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                recalculateCajaFinal($pdo, $reintegro['caja_id']);
+                $message = 'Reintegro eliminado.';
+                break;
+
+            case 'cerrar_caja':
+                closeCaja($pdo, intval($_POST['caja_id'] ?? 0));
+                $message = 'Caja cerrada correctamente.';
+                break;
+
+            case 'nuevo_empleado':
+                $stmt = $pdo->prepare('INSERT INTO empleados (cedula, nombres, apellidos, cargo_id, telefono) VALUES (?, ?, ?, ?, ?)');
+                $stmt->execute([$_POST['cedula'], $_POST['nombres'], $_POST['apellidos'], $_POST['cargo_id'] ?: null, $_POST['telefono'] ?: null]);
+                $message = 'Empleado creado correctamente.';
+                break;
+
+            case 'editar_empleado':
+                $stmt = $pdo->prepare('UPDATE empleados SET cedula = ?, nombres = ?, apellidos = ?, cargo_id = ?, telefono = ? WHERE id = ?');
+                $stmt->execute([$_POST['cedula'], $_POST['nombres'], $_POST['apellidos'], $_POST['cargo_id'] ?: null, $_POST['telefono'] ?: null, intval($_POST['id'])]);
+                $message = 'Empleado actualizado correctamente.';
+                break;
+
+            case 'inactivar_empleado':
+                $stmt = $pdo->prepare('UPDATE empleados SET estado = "inactivo" WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Empleado inactivado.';
+                break;
+
+            case 'nuevo_proveedor':
+                $stmt = $pdo->prepare('INSERT INTO proveedores (nit, nombre, telefono, direccion) VALUES (?, ?, ?, ?)');
+                $stmt->execute([$_POST['nit'], $_POST['nombre'], $_POST['telefono'] ?: null, $_POST['direccion'] ?: null]);
+                $message = 'Proveedor creado correctamente.';
+                break;
+
+            case 'editar_proveedor':
+                $stmt = $pdo->prepare('UPDATE proveedores SET nit = ?, nombre = ?, telefono = ?, direccion = ? WHERE id = ?');
+                $stmt->execute([$_POST['nit'], $_POST['nombre'], $_POST['telefono'] ?: null, $_POST['direccion'] ?: null, intval($_POST['id'])]);
+                $message = 'Proveedor actualizado correctamente.';
+                break;
+
+            case 'inactivar_proveedor':
+                $stmt = $pdo->prepare('UPDATE proveedores SET estado = "inactivo" WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Proveedor inactivado.';
+                break;
+
+            case 'nuevo_cargo':
+                $stmt = $pdo->prepare('INSERT INTO cargos (nombre) VALUES (?)');
+                $stmt->execute([$_POST['nombre']]);
+                $message = 'Cargo creado correctamente.';
+                break;
+
+            case 'editar_cargo':
+                $stmt = $pdo->prepare('UPDATE cargos SET nombre = ? WHERE id = ?');
+                $stmt->execute([$_POST['nombre'], intval($_POST['id'])]);
+                $message = 'Cargo actualizado correctamente.';
+                break;
+
+            case 'inactivar_cargo':
+                $stmt = $pdo->prepare('UPDATE cargos SET estado = "inactivo" WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Cargo inactivado.';
+                break;
+
+            case 'eliminar_empleado':
+                $stmt = $pdo->prepare('DELETE FROM empleados WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Empleado eliminado permanentemente.';
+                break;
+
+            case 'eliminar_cargo':
+                $stmt = $pdo->prepare('DELETE FROM cargos WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Cargo eliminado permanentemente.';
+                break;
+
+            case 'eliminar_caja':
+                $stmt = $pdo->prepare('SELECT id FROM cajas WHERE id = ? AND estado = "cerrada"');
+                $stmt->execute([intval($_POST['id'])]);
+                if (!$stmt->fetch()) throw new Exception('Solo se pueden eliminar cajas cerradas.');
+                $pdo->prepare('DELETE FROM gastos WHERE caja_id = ?')->execute([intval($_POST['id'])]);
+                $pdo->prepare('DELETE FROM reintegros WHERE caja_id = ?')->execute([intval($_POST['id'])]);
+                $pdo->prepare('DELETE FROM cajas WHERE id = ?')->execute([intval($_POST['id'])]);
+                $message = 'Caja y todos sus movimientos eliminados.';
+                break;
+
+            case 'agregar_festivo':
+                $stmt = $pdo->prepare('INSERT INTO festivos (nombre, fecha) VALUES (?, ?)');
+                $stmt->execute([$_POST['nombre_festivo'], $_POST['fecha_festivo']]);
+                $message = 'Festivo registrado correctamente.';
+                break;
+
+            default:
+                throw new Exception('Acción desconocida.');
+        }
+    } catch (Exception $e) {
+        $message = $e->getMessage();
+        $type = 'danger';
+    }
+}
+
+$cajaMenor = getCajaDetails($pdo, 'menor');
+$cajaMayor = getCajaDetails($pdo, 'mayor');
+$movimientosMenor = $cajaMenor ? getCajaMovements($pdo, $cajaMenor['id']) : ['gastos' => [], 'reintegros' => []];
+$movimientosMayor = $cajaMayor ? getCajaMovements($pdo, $cajaMayor['id']) : ['gastos' => [], 'reintegros' => []];
+
+$empleados = $pdo->query('SELECT id, CONCAT(nombres, " ", apellidos) AS nombre FROM empleados WHERE estado = "activo" ORDER BY nombres ASC')->fetchAll();
+$proveedores = $pdo->query('SELECT id, nombre FROM proveedores WHERE estado = "activo" ORDER BY nombre ASC')->fetchAll();
+$cargos = $pdo->query('SELECT id, nombre FROM cargos WHERE estado = "activo" ORDER BY nombre ASC')->fetchAll();
+
+$todosEmpleados = $pdo->query('SELECT e.*, c.nombre AS cargo_nombre FROM empleados e LEFT JOIN cargos c ON e.cargo_id = c.id ORDER BY e.apellidos, e.nombres')->fetchAll();
+$todosProveedores = $pdo->query('SELECT * FROM proveedores ORDER BY nombre')->fetchAll();
+$todosCargos = $pdo->query('SELECT * FROM cargos ORDER BY nombre')->fetchAll();
+$festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado = "activo" ORDER BY fecha DESC')->fetchAll();
+?>
+<?php include 'includes/layout/header.php'; ?>
+
+<div class="container py-4">
+
+    <div class="mb-3">
+        <h1 class="h3 mb-0">Sistema de Caja Menor / Mayor</h1>
+        <p class="text-muted mb-0">Administra gastos, reintegros y catálogos en un solo lugar.</p>
+    </div>
+
+    <?php if ($message): ?>
+        <?= flash($message, $type) ?>
+    <?php endif; ?>
+
+    <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="menor-tab" data-bs-toggle="tab" data-bs-target="#menor" type="button">
+                <i class="bi bi-wallet2"></i> Caja Menor
+                    <?php 
+                        if ($cajaMenor): 
+                    ?>
+                        <span class="badge bg-info ms-1"> 
+                            <?= number_format($cajaMenor['saldo_actual'], 0, ',', '.') ?>
+                        </span>
+                    <?php 
+                        endif; 
+                    ?>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="mayor-tab" data-bs-toggle="tab" data-bs-target="#mayor" type="button">
+                <i class="bi bi-safe"></i> Caja Mayor
+                <?php if ($cajaMayor): ?><span class="badge bg-warning ms-1"><?= number_format($cajaMayor['saldo_actual'], 0, ',', '.') ?></span><?php endif; ?>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="empleados-tab" data-bs-toggle="tab" data-bs-target="#empleados-pane" type="button">
+                <i class="bi bi-people"></i> Empleados <span class="badge bg-secondary ms-1"><?= count($todosEmpleados) ?></span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="proveedores-tab" data-bs-toggle="tab" data-bs-target="#proveedores-pane" type="button">
+                <i class="bi bi-truck"></i> Proveedores <span class="badge bg-secondary ms-1"><?= count($todosProveedores) ?></span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="cargos-tab" data-bs-toggle="tab" data-bs-target="#cargos-pane" type="button">
+                <i class="bi bi-briefcase"></i> Cargos <span class="badge bg-secondary ms-1"><?= count($todosCargos) ?></span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="festivos-tab" data-bs-toggle="tab" data-bs-target="#festivos-pane" type="button">
+                <i class="bi bi-calendar-event"></i> Festivos
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="mainTabsContent">
+
+        <!-- ==================== TAB CAJA MENOR ==================== -->
+        <div class="tab-pane fade show active" id="menor" role="tabpanel">
+            <?php if ($cajaMenor): ?>
+                <div class="card shadow-sm mt-3">
+                    <div class="card-body">
+                        <div class="row g-3 mb-3">
+                            <div class="col-6 col-md-3">
+                                <small class="text-muted d-block">Valor inicial</small>
+                                <span class="h5"><?= number_format($cajaMenor['valor_inicial'], 2, ',', '.') ?></span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <small class="text-muted d-block">Total gastos</small>
+                                <span class="h5 text-danger"><?= number_format($cajaMenor['total_gastos'], 2, ',', '.') ?></span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <small class="text-muted d-block">Total reintegros</small>
+                                <span class="h5 text-success"><?= number_format($cajaMenor['total_reintegros'], 2, ',', '.') ?></span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <small class="text-muted d-block">Saldo actual</small>
+                                <span class="h5 fw-bold <?= $cajaMenor['saldo_actual'] < 0 ? 'text-danger' : 'text-success' ?>"><?= number_format($cajaMenor['saldo_actual'], 2, ',', '.') ?></span>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalGasto" data-tipo="menor" data-caja-id="<?= $cajaMenor['id'] ?>" data-fecha-caja="<?= $cajaMenor['fecha_caja'] ?>">
+                                <i class="bi bi-plus-lg"></i> Agregar gasto
+                            </button>
+                            <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#modalReintegro" data-tipo="menor" data-caja-id="<?= $cajaMenor['id'] ?>" data-fecha-caja="<?= $cajaMenor['fecha_caja'] ?>">
+                                <i class="bi bi-plus-lg"></i> Agregar reintegro
+                            </button>
+                            <a class="btn btn-outline-dark btn-sm" href="imprimir_caja.php?caja_id=<?= $cajaMenor['id'] ?>" target="_blank">
+                                <i class="bi bi-printer"></i> Imprimir
+                            </a>
+                            <form method="post" class="d-inline" onsubmit="return confirm('¿Cerrar la caja menor? Los movimientos quedarán guardados.')">
+                                <input type="hidden" name="action" value="cerrar_caja">
+                                <input type="hidden" name="caja_id" value="<?= $cajaMenor['id'] ?>">
+                                <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-x-circle"></i> Cerrar caja</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-3 g-3">
+                    <div class="col-lg-6">
+                        <div class="card shadow-sm">
+                            <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                                <span><i class="bi bi-cart3"></i> Gastos</span>
+                                <div><input type="text" class="form-control form-control-sm" style="width:200px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaGastosMenor')"></div>
+                            </div>
+                            <div class="card-body p-0">
+                                <?php if (empty($movimientosMenor['gastos'])): ?>
+                                    <p class="text-muted p-3 mb-0">Sin gastos registrados.</p>
+                                <?php else: ?>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0" id="tablaGastosMenor">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Fecha</th>
+                                                    <th>Descripción</th>
+                                                    <th>Valor</th>
+                                                    <th>Empleado</th>
+                                                    <th style="width:110px">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($movimientosMenor['gastos'] as $gasto): ?>
+                                                    <tr>
+                                                        <td><?= htmlspecialchars($gasto['fecha_gasto']) ?></td>
+                                                        <td><?= htmlspecialchars($gasto['descripcion']) ?>
+                                                            <?php if ($gasto['soporte']): ?>
+                                                                <?php if (strpos($gasto['soporte'], 'uploads/') === 0): ?>
+                                                                    <br><a href="<?= htmlspecialchars($gasto['soporte']) ?>" target="_blank" title="Ver recibo"><img src="<?= htmlspecialchars($gasto['soporte']) ?>" class="img-thumbnail" style="max-height:40px" alt="Recibo"></a>
+                                                                <?php else: ?>
+                                                                    <br><small class="text-muted"><?= htmlspecialchars($gasto['soporte']) ?></small>
+                                                                <?php endif; ?>
+                                                            <?php endif; ?>
+                                                        </td>
+                                                        <td class="text-danger fw-semibold"><?= number_format($gasto['valor'], 2, ',', '.') ?></td>
+                                                        <td><small><?= htmlspecialchars(($gasto['nombres'] ?? '') . ' ' . ($gasto['apellidos'] ?? '-')) ?></small></td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-outline-success py-0 px-1" title="Editar"
+                                                                data-bs-toggle="modal" data-bs-target="#modalGasto"
+                                                                data-tipo="menor" data-caja-id="<?= $cajaMenor['id'] ?>"
+                                                                data-fecha-caja="<?= $cajaMenor['fecha_caja'] ?>"
+                                                                data-edit="true" data-id="<?= $gasto['id'] ?>"
+                                                                data-empleado-id="<?= $gasto['empleado_id'] ?>"
+                                                                data-proveedor-id="<?= $gasto['proveedor_id'] ?>"
+                                                                data-fecha="<?= $gasto['fecha_gasto'] ?>"
+                                                                data-descripcion="<?= htmlspecialchars($gasto['descripcion'], ENT_QUOTES) ?>"
+                                                                data-valor="<?= $gasto['valor'] ?>"
+                                                                data-tipo-soporte="<?= $gasto['tipo_soporte'] ?>"
+                                                                data-soporte="<?= htmlspecialchars($gasto['soporte'] ?? '', ENT_QUOTES) ?>">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </button>
+                                                            <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este gasto?')">
+                                                                <input type="hidden" name="action" value="eliminar_gasto">
+                                                                <input type="hidden" name="id" value="<?= $gasto['id'] ?>">
+                                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                                            </form>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card shadow-sm">
+                            <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                                <span><i class="bi bi-arrow-return-left"></i> Reintegros</span>
+                                <div><input type="text" class="form-control form-control-sm" style="width:200px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaReintegrosMenor')"></div>
+                            </div>
+                            <div class="card-body p-0">
+                                <?php if (empty($movimientosMenor['reintegros'])): ?>
+                                    <p class="text-muted p-3 mb-0">Sin reintegros registrados.</p>
+                                <?php else: ?>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0" id="tablaReintegrosMenor">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Fecha</th>
+                                                    <th>Descripción</th>
+                                                    <th>Valor</th>
+                                                    <th style="width:110px">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($movimientosMenor['reintegros'] as $reintegro): ?>
+                                                    <tr>
+                                                        <td><?= htmlspecialchars($reintegro['fecha_reintegro']) ?></td>
+                                                        <td><?= htmlspecialchars($reintegro['descripcion']) ?>
+                                                            <?php if ($reintegro['soporte']): ?><br><small class="text-muted"><?= htmlspecialchars($reintegro['soporte']) ?></small><?php endif; ?>
+                                                        </td>
+                                                        <td class="text-success fw-semibold"><?= number_format($reintegro['valor'], 2, ',', '.') ?></td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-outline-success py-0 px-1" title="Editar"
+                                                                data-bs-toggle="modal" data-bs-target="#modalReintegro"
+                                                                data-tipo="menor" data-caja-id="<?= $cajaMenor['id'] ?>"
+                                                                data-fecha-caja="<?= $cajaMenor['fecha_caja'] ?>"
+                                                                data-edit="true" data-id="<?= $reintegro['id'] ?>"
+                                                                data-fecha="<?= $reintegro['fecha_reintegro'] ?>"
+                                                                data-descripcion="<?= htmlspecialchars($reintegro['descripcion'] ?? '', ENT_QUOTES) ?>"
+                                                                data-valor="<?= $reintegro['valor'] ?>"
+                                                                data-soporte="<?= htmlspecialchars($reintegro['soporte'] ?? '', ENT_QUOTES) ?>">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </button>
+                                                            <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este reintegro?')">
+                                                                <input type="hidden" name="action" value="eliminar_reintegro">
+                                                                <input type="hidden" name="id" value="<?= $reintegro['id'] ?>">
+                                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                                            </form>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="alert alert-info mt-3 d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-info-circle"></i> No hay caja menor abierta.</span>
+    <form method="post" class="m-0 form-crear-caja">
+        <input type="hidden" name="action" value="nueva_caja">
+        <input type="hidden" name="tipo" value="menor">
+        <input type="hidden" name="cliente_fecha" class="cliente-fecha" value="">
+        <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-plus-circle"></i> Abrir Caja Menor</button>
+    </form>
+</div>
+            <?php endif; ?>
+        </div>
+
+        <!-- ==================== TAB CAJA MAYOR ==================== -->
+        <div class="tab-pane fade" id="mayor" role="tabpanel">
+            <?php if ($cajaMayor): ?>
+                <div class="card shadow-sm mt-3">
+                    <div class="card-body">
+                        <div class="row g-3 mb-3">
+                            <div class="col-6 col-md-3">
+                                <small class="text-muted d-block">Valor inicial</small>
+                                <span class="h5"><?= number_format($cajaMayor['valor_inicial'], 2, ',', '.') ?></span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <small class="text-muted d-block">Total gastos</small>
+                                <span class="h5 text-danger"><?= number_format($cajaMayor['total_gastos'], 2, ',', '.') ?></span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <small class="text-muted d-block">Total reintegros</small>
+                                <span class="h5 text-success"><?= number_format($cajaMayor['total_reintegros'], 2, ',', '.') ?></span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <small class="text-muted d-block">Saldo actual</small>
+                                <span class="h5 fw-bold <?= $cajaMayor['saldo_actual'] < 0 ? 'text-danger' : 'text-success' ?>"><?= number_format($cajaMayor['saldo_actual'], 2, ',', '.') ?></span>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalGasto" data-tipo="mayor" data-caja-id="<?= $cajaMayor['id'] ?>" data-fecha-caja="<?= $cajaMayor['fecha_caja'] ?>">
+                                <i class="bi bi-plus-lg"></i> Agregar gasto
+                            </button>
+                            <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#modalReintegro" data-tipo="mayor" data-caja-id="<?= $cajaMayor['id'] ?>" data-fecha-caja="<?= $cajaMayor['fecha_caja'] ?>">
+                                <i class="bi bi-plus-lg"></i> Agregar reintegro
+                            </button>
+                            <a class="btn btn-outline-dark btn-sm" href="imprimir_caja.php?caja_id=<?= $cajaMayor['id'] ?>" target="_blank">
+                                <i class="bi bi-printer"></i> Imprimir
+                            </a>
+                            <form method="post" class="d-inline" onsubmit="return confirm('¿Cerrar la caja mayor? Los movimientos quedarán guardados.')">
+                                <input type="hidden" name="action" value="cerrar_caja">
+                                <input type="hidden" name="caja_id" value="<?= $cajaMayor['id'] ?>">
+                                <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-x-circle"></i> Cerrar caja</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-3 g-3">
+                    <div class="col-lg-6">
+                        <div class="card shadow-sm">
+                            <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                                <span><i class="bi bi-cart3"></i> Gastos</span>
+                                <div><input type="text" class="form-control form-control-sm" style="width:200px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaGastosMayor')"></div>
+                            </div>
+                            <div class="card-body p-0">
+                                <?php if (empty($movimientosMayor['gastos'])): ?>
+                                    <p class="text-muted p-3 mb-0">Sin gastos registrados.</p>
+                                <?php else: ?>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0" id="tablaGastosMayor">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Fecha</th>
+                                                    <th>Descripción</th>
+                                                    <th>Valor</th>
+                                                    <th>Empleado</th>
+                                                    <th style="width:110px">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($movimientosMayor['gastos'] as $gasto): ?>
+                                                    <tr>
+                                                        <td><?= htmlspecialchars($gasto['fecha_gasto']) ?></td>
+                                                        <td><?= htmlspecialchars($gasto['descripcion']) ?>
+                                                            <?php if ($gasto['soporte']): ?>
+                                                                <?php if (strpos($gasto['soporte'], 'uploads/') === 0): ?>
+                                                                    <br><a href="<?= htmlspecialchars($gasto['soporte']) ?>" target="_blank" title="Ver recibo"><img src="<?= htmlspecialchars($gasto['soporte']) ?>" class="img-thumbnail" style="max-height:40px" alt="Recibo"></a>
+                                                                <?php else: ?>
+                                                                    <br><small class="text-muted"><?= htmlspecialchars($gasto['soporte']) ?></small>
+                                                                <?php endif; ?>
+                                                            <?php endif; ?>
+                                                        </td>
+                                                        <td class="text-danger fw-semibold"><?= number_format($gasto['valor'], 2, ',', '.') ?></td>
+                                                        <td><small><?= htmlspecialchars(($gasto['nombres'] ?? '') . ' ' . ($gasto['apellidos'] ?? '-')) ?></small></td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-outline-success py-0 px-1" title="Editar"
+                                                                data-bs-toggle="modal" data-bs-target="#modalGasto"
+                                                                data-tipo="mayor" data-caja-id="<?= $cajaMayor['id'] ?>"
+                                                                data-fecha-caja="<?= $cajaMayor['fecha_caja'] ?>"
+                                                                data-edit="true" data-id="<?= $gasto['id'] ?>"
+                                                                data-empleado-id="<?= $gasto['empleado_id'] ?>"
+                                                                data-proveedor-id="<?= $gasto['proveedor_id'] ?>"
+                                                                data-fecha="<?= $gasto['fecha_gasto'] ?>"
+                                                                data-descripcion="<?= htmlspecialchars($gasto['descripcion'], ENT_QUOTES) ?>"
+                                                                data-valor="<?= $gasto['valor'] ?>"
+                                                                data-tipo-soporte="<?= $gasto['tipo_soporte'] ?>"
+                                                                data-soporte="<?= htmlspecialchars($gasto['soporte'] ?? '', ENT_QUOTES) ?>">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </button>
+                                                            <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este gasto?')">
+                                                                <input type="hidden" name="action" value="eliminar_gasto">
+                                                                <input type="hidden" name="id" value="<?= $gasto['id'] ?>">
+                                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                                            </form>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card shadow-sm">
+                            <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                                <span><i class="bi bi-arrow-return-left"></i> Reintegros</span>
+                                <div><input type="text" class="form-control form-control-sm" style="width:200px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaReintegrosMayor')"></div>
+                            </div>
+                            <div class="card-body p-0">
+                                <?php if (empty($movimientosMayor['reintegros'])): ?>
+                                    <p class="text-muted p-3 mb-0">Sin reintegros registrados.</p>
+                                <?php else: ?>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0" id="tablaReintegrosMayor">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Fecha</th>
+                                                    <th>Descripción</th>
+                                                    <th>Valor</th>
+                                                    <th style="width:110px">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($movimientosMayor['reintegros'] as $reintegro): ?>
+                                                    <tr>
+                                                        <td><?= htmlspecialchars($reintegro['fecha_reintegro']) ?></td>
+                                                        <td><?= htmlspecialchars($reintegro['descripcion']) ?>
+                                                            <?php if ($reintegro['soporte']): ?><br><small class="text-muted"><?= htmlspecialchars($reintegro['soporte']) ?></small><?php endif; ?>
+                                                        </td>
+                                                        <td class="text-success fw-semibold"><?= number_format($reintegro['valor'], 2, ',', '.') ?></td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-outline-success py-0 px-1" title="Editar"
+                                                                data-bs-toggle="modal" data-bs-target="#modalReintegro"
+                                                                data-tipo="mayor" data-caja-id="<?= $cajaMayor['id'] ?>"
+                                                                data-fecha-caja="<?= $cajaMayor['fecha_caja'] ?>"
+                                                                data-edit="true" data-id="<?= $reintegro['id'] ?>"
+                                                                data-fecha="<?= $reintegro['fecha_reintegro'] ?>"
+                                                                data-descripcion="<?= htmlspecialchars($reintegro['descripcion'] ?? '', ENT_QUOTES) ?>"
+                                                                data-valor="<?= $reintegro['valor'] ?>"
+                                                                data-soporte="<?= htmlspecialchars($reintegro['soporte'] ?? '', ENT_QUOTES) ?>">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </button>
+                                                            <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este reintegro?')">
+                                                                <input type="hidden" name="action" value="eliminar_reintegro">
+                                                                <input type="hidden" name="id" value="<?= $reintegro['id'] ?>">
+                                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                                            </form>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="alert alert-info mt-3 d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-info-circle"></i> No hay caja mayor abierta.</span>
+    <form method="post" class="m-0 form-crear-caja">
+        <input type="hidden" name="action" value="nueva_caja">
+        <input type="hidden" name="tipo" value="mayor">
+        <input type="hidden" name="cliente_fecha" class="cliente-fecha" value="">
+        <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-plus-circle"></i> Abrir Caja Mayor</button>
+    </form>
+</div>
+            <?php endif; ?>
+        </div>
+
+        <!-- ==================== TAB EMPLEADOS ==================== -->
+        <div class="tab-pane fade" id="empleados-pane" role="tabpanel">
+            <div class="mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0"><i class="bi bi-people"></i> Empleados</h5>
+                    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalEmpleado" data-edit="false">
+                        <i class="bi bi-plus-lg"></i> Nuevo empleado
+                    </button>
+                </div>
+                <?php if (empty($todosEmpleados)): ?>
+                    <div class="alert alert-light">No hay empleados registrados.</div>
+                <?php else: ?>
+                    <div class="card shadow-sm">
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Cédula</th>
+                                            <th>Nombre</th>
+                                            <th>Cargo</th>
+                                            <th>Teléfono</th>
+                                            <th>Estado</th>
+                                            <th style="width:160px">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($todosEmpleados as $emp): ?>
+                                            <tr>
+                                                <td><?= htmlspecialchars($emp['cedula']) ?></td>
+                                                <td><?= htmlspecialchars($emp['nombres'] . ' ' . $emp['apellidos']) ?></td>
+                                                <td><?= htmlspecialchars($emp['cargo_nombre'] ?: '-') ?></td>
+                                                <td><?= htmlspecialchars($emp['telefono'] ?: '-') ?></td>
+                                                <td><span class="badge bg-<?= $emp['estado'] === 'activo' ? 'success' : 'secondary' ?>"><?= $emp['estado'] ?></span></td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-success py-0 px-1" title="Editar"
+                                                        data-bs-toggle="modal" data-bs-target="#modalEmpleado"
+                                                        data-edit="true" data-id="<?= $emp['id'] ?>"
+                                                        data-cedula="<?= htmlspecialchars($emp['cedula'], ENT_QUOTES) ?>"
+                                                        data-nombres="<?= htmlspecialchars($emp['nombres'], ENT_QUOTES) ?>"
+                                                        data-apellidos="<?= htmlspecialchars($emp['apellidos'], ENT_QUOTES) ?>"
+                                                        data-cargo-id="<?= $emp['cargo_id'] ?>"
+                                                        data-telefono="<?= htmlspecialchars($emp['telefono'] ?? '', ENT_QUOTES) ?>">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <?php if ($emp['estado'] === 'activo'): ?>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este empleado? Ya no se podrá reactivar.')">
+                                                            <input type="hidden" name="action" value="inactivar_empleado">
+                                                            <input type="hidden" name="id" value="<?= $emp['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Inactivar"><i class="bi bi-person-x"></i></button>
+                                                        </form>
+                                                    <?php else: ?>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar permanentemente este empleado?')">
+                                                            <input type="hidden" name="action" value="eliminar_empleado">
+                                                            <input type="hidden" name="id" value="<?= $emp['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- ==================== TAB PROVEEDORES ==================== -->
+        <div class="tab-pane fade" id="proveedores-pane" role="tabpanel">
+            <div class="mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0"><i class="bi bi-truck"></i> Proveedores</h5>
+                    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalProveedor" data-edit="false">
+                        <i class="bi bi-plus-lg"></i> Nuevo proveedor
+                    </button>
+                </div>
+                <?php if (empty($todosProveedores)): ?>
+                    <div class="alert alert-light">No hay proveedores registrados.</div>
+                <?php else: ?>
+                    <div class="card shadow-sm">
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>NIT</th>
+                                            <th>Nombre</th>
+                                            <th>Teléfono</th>
+                                            <th>Dirección</th>
+                                            <th>Estado</th>
+                                            <th style="width:160px">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($todosProveedores as $prov): ?>
+                                            <tr>
+                                                <td><?= htmlspecialchars($prov['nit']) ?></td>
+                                                <td><?= htmlspecialchars($prov['nombre']) ?></td>
+                                                <td><?= htmlspecialchars($prov['telefono'] ?: '-') ?></td>
+                                                <td><?= htmlspecialchars($prov['direccion'] ?: '-') ?></td>
+                                                <td><span class="badge bg-<?= $prov['estado'] === 'activo' ? 'success' : 'secondary' ?>"><?= $prov['estado'] ?></span></td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-success py-0 px-1" title="Editar"
+                                                        data-bs-toggle="modal" data-bs-target="#modalProveedor"
+                                                        data-edit="true" data-id="<?= $prov['id'] ?>"
+                                                        data-nit="<?= htmlspecialchars($prov['nit'], ENT_QUOTES) ?>"
+                                                        data-nombre="<?= htmlspecialchars($prov['nombre'], ENT_QUOTES) ?>"
+                                                        data-telefono="<?= htmlspecialchars($prov['telefono'] ?? '', ENT_QUOTES) ?>"
+                                                        data-direccion="<?= htmlspecialchars($prov['direccion'] ?? '', ENT_QUOTES) ?>">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <?php if ($prov['estado'] === 'activo'): ?>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este proveedor?')">
+                                                            <input type="hidden" name="action" value="inactivar_proveedor">
+                                                            <input type="hidden" name="id" value="<?= $prov['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Inactivar"><i class="bi bi-building-x"></i></button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- ==================== TAB CARGOS ==================== -->
+        <div class="tab-pane fade" id="cargos-pane" role="tabpanel">
+            <div class="mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0"><i class="bi bi-briefcase"></i> Cargos</h5>
+                    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalCargo" data-edit="false">
+                        <i class="bi bi-plus-lg"></i> Nuevo cargo
+                    </button>
+                </div>
+                <?php if (empty($todosCargos)): ?>
+                    <div class="alert alert-light">No hay cargos registrados.</div>
+                <?php else: ?>
+                    <div class="card shadow-sm">
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Nombre</th>
+                                            <th>Estado</th>
+                                            <th style="width:160px">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($todosCargos as $cargo): ?>
+                                            <tr>
+                                                <td><?= $cargo['id'] ?></td>
+                                                <td><?= htmlspecialchars($cargo['nombre']) ?></td>
+                                                <td><span class="badge bg-<?= $cargo['estado'] === 'activo' ? 'success' : 'secondary' ?>"><?= $cargo['estado'] ?></span></td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-success py-0 px-1" title="Editar"
+                                                        data-bs-toggle="modal" data-bs-target="#modalCargo"
+                                                        data-edit="true" data-id="<?= $cargo['id'] ?>"
+                                                        data-nombre="<?= htmlspecialchars($cargo['nombre'], ENT_QUOTES) ?>">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <?php if ($cargo['estado'] === 'activo'): ?>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este cargo? Ya no se podrá reactivar.')">
+                                                            <input type="hidden" name="action" value="inactivar_cargo">
+                                                            <input type="hidden" name="id" value="<?= $cargo['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Inactivar"><i class="bi bi-slash-circle"></i></button>
+                                                        </form>
+                                                    <?php else: ?>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar permanentemente este cargo?')">
+                                                            <input type="hidden" name="action" value="eliminar_cargo">
+                                                            <input type="hidden" name="id" value="<?= $cargo['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- ==================== TAB FESTIVOS ==================== -->
+        <div class="tab-pane fade" id="festivos-pane" role="tabpanel">
+            <div class="mt-3">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-calendar-plus"></i> Agregar festivo</h5>
+                        <form method="post" class="row g-3">
+                            <input type="hidden" name="action" value="agregar_festivo">
+                            <div class="col-md-4">
+                                <label class="form-label">Nombre</label>
+                                <input class="form-control" name="nombre_festivo" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Fecha</label>
+                                <input class="form-control" type="date" name="fecha_festivo" required>
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button type="submit" class="btn btn-success w-100"><i class="bi bi-save"></i> Guardar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card shadow-sm mt-3">
+                    <div class="card-header bg-white"><i class="bi bi-calendar-event"></i> Festivos activos</div>
+                    <div class="card-body p-0">
+                        <?php if (empty($festivosActivos)): ?>
+                            <p class="text-muted p-3 mb-0">No hay festivos registrados.</p>
+                        <?php else: ?>
+                            <ul class="list-group list-group-flush">
+                                <?php foreach ($festivosActivos as $festivo): ?>
+                                    <li class="list-group-item d-flex justify-content-between">
+                                        <span><?= htmlspecialchars($festivo['fecha']) ?> — <?= htmlspecialchars($festivo['nombre']) ?></span>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<?php include 'includes/modals/gasto.php'; ?>
+<?php include 'includes/modals/reintegro.php'; ?>
+<?php include 'includes/modals/empleado.php'; ?>
+<?php include 'includes/modals/proveedor.php'; ?>
+<?php include 'includes/modals/cargo.php'; ?>
+<?php include 'includes/layout/footer.php'; ?>
