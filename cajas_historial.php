@@ -20,7 +20,7 @@ if ($detalleId) {
             FROM gastos g
             LEFT JOIN empleados e ON g.empleado_id = e.id
             LEFT JOIN proveedores p ON g.proveedor_id = p.id
-            WHERE g.caja_id = ? ORDER BY g.creado_en DESC');
+            WHERE g.caja_id = ? ORDER BY g.orden ASC, g.id ASC');
         $stmt->execute([$detalleId]);
         $detalleGastos = $stmt->fetchAll();
 
@@ -285,6 +285,9 @@ $diasMesActual = date('t');
                         <a class="btn btn-outline-success btn-sm" href="export_excel.php<?= htmlspecialchars(buildExportQuery('menor', $filtroEstado, $filtroMes, $filtroAnio, $filtroDesde, $filtroHasta, $filtroUltimos, $pagina)) ?>">
                             <i class="bi bi-file-earmark-excel"></i> Exportar Excel
                         </a>
+                        <a class="btn btn-outline-warning btn-sm" href="export_syscafe.php<?= htmlspecialchars(buildExportQuery('menor', $filtroEstado, $filtroMes, $filtroAnio, $filtroDesde, $filtroHasta, $filtroUltimos, $pagina)) ?>">
+                            <i class="bi bi-file-earmark-excel"></i> Syscafe
+                        </a>
                         <?php if ($totalPaginasMenor > 1 && $filtroUltimos <= 0): ?>
                             <?= mostrarPaginacion($pagina, $totalPaginasMenor, 'histoMenor') ?>
                         <?php endif; ?>
@@ -358,6 +361,9 @@ $diasMesActual = date('t');
                         </a>
                         <a class="btn btn-outline-success btn-sm" href="export_excel.php<?= htmlspecialchars(buildExportQuery('mayor', $filtroEstado, $filtroMes, $filtroAnio, $filtroDesde, $filtroHasta, $filtroUltimos, $pagina)) ?>">
                             <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+                        </a>
+                        <a class="btn btn-outline-warning btn-sm" href="export_syscafe.php<?= htmlspecialchars(buildExportQuery('mayor', $filtroEstado, $filtroMes, $filtroAnio, $filtroDesde, $filtroHasta, $filtroUltimos, $pagina)) ?>">
+                            <i class="bi bi-file-earmark-excel"></i> Syscafe
                         </a>
                         <?php if ($totalPaginasMayor > 1 && $filtroUltimos <= 0): ?>
                             <?= mostrarPaginacion($pagina, $totalPaginasMayor, 'histoMayor') ?>
@@ -462,6 +468,13 @@ $diasMesActual = date('t');
                     </div>
                 </div>
 
+                <?php if (!empty($detalleCaja['nota'])): ?>
+                <div class="alert alert-info py-2 px-3 mb-3">
+                    <strong><i class="bi bi-sticky"></i> Nota:</strong>
+                    <?= nl2br(htmlspecialchars($detalleCaja['nota'])) ?>
+                </div>
+                <?php endif; ?>
+
                 <ul class="nav nav-tabs" id="detalleTabs" role="tablist">
                     <li class="nav-item">
                         <button class="nav-link active" id="detGastos-tab" data-bs-toggle="tab" data-bs-target="#detGastos" type="button">
@@ -502,7 +515,15 @@ $diasMesActual = date('t');
                                                 <td class="text-danger fw-semibold"><?= number_format($g['valor'], 2, ',', '.') ?></td>
                                                 <td title="<?= htmlspecialchars(($g['nombres'] ?? '') . ' ' . ($g['apellidos'] ?? '')) ?>"><?= htmlspecialchars(($g['nombres'] ?? '') . ' ' . ($g['apellidos'] ?? '')) ?: '-' ?></td>
                                                 <td title="<?= htmlspecialchars($g['proveedor_nombre'] ?? '') ?>"><?= htmlspecialchars($g['proveedor_nombre'] ?? '') ?: '-' ?></td>
-                                                <td title="<?= htmlspecialchars($g['soporte'] ?? '') ?>"><small><?= htmlspecialchars($g['soporte'] ?: '-') ?></small></td>
+                                                <td>
+                                                    <?php if ($g['soporte'] && strpos($g['soporte'], 'uploads/') === 0): ?>
+                                                        <a href="<?= htmlspecialchars($g['soporte']) ?>" target="_blank" title="Ver soporte">
+                                                            <img src="<?= htmlspecialchars($g['soporte']) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte">
+                                                        </a>
+                                                    <?php else: ?>
+                                                        <small><?= htmlspecialchars($g['soporte'] ?: '-') ?></small>
+                                                    <?php endif; ?>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -532,7 +553,15 @@ $diasMesActual = date('t');
                                                 <td><?= htmlspecialchars($r['fecha_reintegro']) ?></td>
                                                 <td title="<?= htmlspecialchars($r['descripcion'] ?? '') ?>"><?= htmlspecialchars($r['descripcion']) ?></td>
                                                 <td class="text-success fw-semibold"><?= number_format($r['valor'], 2, ',', '.') ?></td>
-                                                <td title="<?= htmlspecialchars($r['soporte'] ?? '') ?>"><small><?= htmlspecialchars($r['soporte'] ?: '-') ?></small></td>
+                                                <td>
+                                                    <?php if ($r['soporte'] && strpos($r['soporte'], 'uploads/') === 0): ?>
+                                                        <a href="<?= htmlspecialchars($r['soporte']) ?>" target="_blank" title="Ver soporte">
+                                                            <img src="<?= htmlspecialchars($r['soporte']) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte">
+                                                        </a>
+                                                    <?php else: ?>
+                                                        <small><?= htmlspecialchars($r['soporte'] ?: '-') ?></small>
+                                                    <?php endif; ?>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -551,6 +580,9 @@ $diasMesActual = date('t');
                 </a>
                 <a class="btn btn-outline-success btn-sm" href="export_excel.php?caja_id=<?= $detalleCaja['id'] ?>">
                     <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+                </a>
+                <a class="btn btn-outline-warning btn-sm" href="export_syscafe.php?caja_id=<?= $detalleCaja['id'] ?>">
+                    <i class="bi bi-file-earmark-excel"></i> Syscafe
                 </a>
                 <a href="cajas_historial.php<?= isset($_GET['estado']) ? '?estado=' . urlencode($_GET['estado']) : '' ?>" class="btn btn-secondary">Cerrar</a>
             </div>

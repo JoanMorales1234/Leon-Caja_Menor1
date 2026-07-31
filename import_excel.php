@@ -18,7 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['archivo'])) {
     } else {
         $psScriptFile = __DIR__ . '\\temp_import.ps1';
         $jsonOutputFile = __DIR__ . '\\temp_json_output.txt';
-        $localExcelFile = __DIR__ . '\\temp_' . uniqid() . '.xlsx';
+        $extOriginal = strtolower(pathinfo($archivo['name'], PATHINFO_EXTENSION));
+        $localExcelFile = __DIR__ . '\\temp_' . uniqid() . '.' . $extOriginal;
 
         @unlink($psScriptFile);
         @unlink($jsonOutputFile);

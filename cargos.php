@@ -28,6 +28,11 @@ try {
                 $stmt->execute([$_POST['id']]);
                 $message = 'Cargo inactivado correctamente.';
             }
+            if ($_POST['action'] === 'activar_cargo') {
+                $stmt = $pdo->prepare('UPDATE cargos SET estado = "activo" WHERE id = ?');
+                $stmt->execute([$_POST['id']]);
+                $message = 'Cargo activado correctamente.';
+            }
             if ($_POST['action'] === 'eliminar_cargo') {
                 $stmt = $pdo->prepare('DELETE FROM cargos WHERE id = ?');
                 $stmt->execute([$_POST['id']]);
@@ -167,12 +172,17 @@ $viewCargo = $viewId ? getCargo($pdo, $viewId) : null;
                                     <a class="btn btn-sm btn-outline-primary" href="cargos.php?view=<?= $cargo['id'] ?>">Ver</a>
                                     <a class="btn btn-sm btn-outline-success" href="cargos.php?edit=<?= $cargo['id'] ?>">Editar</a>
                                     <?php if ($cargo['estado'] === 'activo'): ?>
-                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este cargo? Ya no se podrá reactivar.')">
+                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este cargo?')">
                                             <input type="hidden" name="action" value="inactivar_cargo">
                                             <input type="hidden" name="id" value="<?= $cargo['id'] ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">Inactivar</button>
+                                            <button type="submit" class="btn btn-sm btn-outline-warning">Inactivar</button>
                                         </form>
                                     <?php else: ?>
+                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Activar este cargo?')">
+                                            <input type="hidden" name="action" value="activar_cargo">
+                                            <input type="hidden" name="id" value="<?= $cargo['id'] ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-success">Activar</button>
+                                        </form>
                                         <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar permanentemente este cargo?')">
                                             <input type="hidden" name="action" value="eliminar_cargo">
                                             <input type="hidden" name="id" value="<?= $cargo['id'] ?>">

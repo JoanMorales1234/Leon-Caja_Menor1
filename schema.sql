@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS cajas (
   valor_final DECIMAL(14,2) NOT NULL DEFAULT 0,
   estado ENUM('abierta','cerrada') NOT NULL DEFAULT 'abierta',
   fecha_cierre DATETIME DEFAULT NULL,
+  nota TEXT DEFAULT NULL,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_caja_abierta (tipo_caja, estado, fecha_caja)
@@ -98,6 +99,7 @@ CREATE TABLE IF NOT EXISTS gastos (
   valor DECIMAL(14,2) NOT NULL,
   tipo_soporte ENUM('factura','recibo','otro') NOT NULL DEFAULT 'otro',
   soporte VARCHAR(255),
+  orden INT NOT NULL DEFAULT 0,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (caja_id) REFERENCES cajas(id) ON DELETE CASCADE,
   FOREIGN KEY (empleado_id) REFERENCES empleados(id) ON DELETE SET NULL,
@@ -113,6 +115,17 @@ CREATE TABLE IF NOT EXISTS reintegros (
   fecha_reintegro DATE NOT NULL,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (caja_id) REFERENCES cajas(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS soportes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gasto_id INT NOT NULL,
+  tipo VARCHAR(20) NOT NULL DEFAULT 'otro',
+  archivo VARCHAR(255),
+  descripcion VARCHAR(255),
+  orden INT NOT NULL DEFAULT 0,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (gasto_id) REFERENCES gastos(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 INSERT IGNORE INTO roles (nombre, descripcion) VALUES

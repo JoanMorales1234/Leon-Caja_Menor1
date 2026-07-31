@@ -12,6 +12,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         switch ($_POST['action']) {
 
+            case 'reordenar_gastos':
+                $cajaId = intval($_POST['caja_id'] ?? 0);
+                $orden = json_decode($_POST['orden'] ?? '[]', true);
+                if (!$cajaId || !is_array($orden)) throw new Exception('Datos inválidos.');
+                $stmt = $pdo->prepare('UPDATE gastos SET orden = ? WHERE id = ? AND caja_id = ?');
+                foreach ($orden as $index => $gastoId) {
+                    $stmt->execute([$index + 1, intval($gastoId), $cajaId]);
+                }
+                echo json_encode(['success' => true]);
+                exit;
+
             case 'nueva_caja':
                 $tipoCrear = $_POST['tipo'] ?? '';
                 if (!in_array($tipoCrear, ['menor', 'mayor'])) throw new Exception('Tipo de caja inválido.');
@@ -44,11 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tipoCaja = $caja['tipo_caja'];
                 if ($tipoCaja === 'menor' && $valor > 50000) throw new Exception('El valor excede $50.000. Usa Caja Mayor para este gasto.');
                 if ($tipoCaja === 'mayor' && $valor <= 50000) throw new Exception('El valor debe ser mayor a $50.000. Usa Caja Menor para este gasto.');
-                $soporteVal = $_POST['soporte'] ?: null;
-                if (isset($_FILES['soporte_foto']) && $_FILES['soporte_foto']['error'] === UPLOAD_ERR_OK) {
-                    $soporteVal = handleFotoUpload($_FILES['soporte_foto']);
-                }
-                $stmt = $pdo->prepare('INSERT INTO gastos (caja_id, empleado_id, proveedor_id, fecha_gasto, descripcion, valor, tipo_soporte, soporte) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                $pdo->prepare('UPDATE gastos SET orden = orden + 1 WHERE caja_id = ?')->execute([$cajaId]);
+                $stmt = $pdo->prepare('INSERT INTO gastos (caja_id, empleado_id, proveedor_id, fecha_gasto, descripcion, valor, orden) VALUES (?, ?, ?, ?, ?, ?, 0)');
                 $stmt->execute([
                     $cajaId,
                     $_POST['empleado_id'] ?: null,
@@ -56,9 +64,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_POST['fecha_gasto'] ?: date('Y-m-d'),
                     $_POST['descripcion'],
                     $valor,
-                    $_POST['tipo_soporte'] ?: 'otro',
-                    $soporteVal,
                 ]);
+                $gastoId = $pdo->lastInsertId();
+                $ordenSop = 0;
+                if (isset($_FILES['soporte_foto']) && $_FILES['soporte_foto']['error'] === UPLOAD_ERR_OK) {
+                    $archivo = handleFotoUpload($_FILES['soporte_foto']);
+                    $pdo->prepare('INSERT INTO soportes (gasto_id, tipo, archivo, orden) VALUES (?, ?, ?, ?)')
+                        ->execute([$gastoId, $_POST['tipo_soporte'] ?: 'otro', $archivo, $ordenSop++]);
+                }
+                if (isset($_FILES['soporte_extra'])) {
+                    $descs = $_POST['soporte_extra_desc'] ?? [];
+                    foreach ($_FILES['soporte_extra']['error'] as $i => $err) {
+                        if ($err === UPLOAD_ERR_OK && !empty($_FILES['soporte_extra']['name'][$i])) {
+                            $file = [
+                                'name' => $_FILES['soporte_extra']['name'][$i],
+                                'type' => $_FILES['soporte_extra']['type'][$i],
+                                'tmp_name' => $_FILES['soporte_extra']['tmp_name'][$i],
+                                'error' => UPLOAD_ERR_OK,
+                                'size' => $_FILES['soporte_extra']['size'][$i],
+                            ];
+                            $archivo = handleFotoUpload($file);
+                            $desc = $descs[$i] ?? '';
+                            $pdo->prepare('INSERT INTO soportes (gasto_id, tipo, archivo, descripcion, orden) VALUES (?, "otro", ?, ?, ?)')
+                                ->execute([$gastoId, $archivo, $desc, $ordenSop++]);
+                        }
+                    }
+                }
                 recalculateCajaFinal($pdo, $cajaId);
                 $message = 'Gasto agregado a caja ' . strtoupper($tipoCaja) . '.';
                 break;
@@ -73,12 +104,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tipoCaja = $gastoActual['tipo_caja'];
                 if ($tipoCaja === 'menor' && $nuevoValor > 50000) throw new Exception('El valor excede $50.000. Este gasto pertenece a Caja Menor.');
                 if ($tipoCaja === 'mayor' && $nuevoValor <= 50000) throw new Exception('El valor debe ser mayor a $50.000. Este gasto pertenece a Caja Mayor.');
-                $soporteVal = $_POST['soporte'] ?? $gastoActual['soporte'];
-                if (isset($_FILES['soporte_foto']) && $_FILES['soporte_foto']['error'] === UPLOAD_ERR_OK) {
-                    $soporteVal = handleFotoUpload($_FILES['soporte_foto']);
+                $stmt = $pdo->prepare('UPDATE gastos SET empleado_id = ?, proveedor_id = ?, fecha_gasto = ?, descripcion = ?, valor = ? WHERE id = ?');
+                $stmt->execute([$_POST['empleado_id'] ?: null, $_POST['proveedor_id'] ?: null, $_POST['fecha_gasto'], $_POST['descripcion'], $nuevoValor, $gastoId]);
+                if (!empty($_POST['eliminar_soporte'])) {
+                    $delStmt = $pdo->prepare('DELETE FROM soportes WHERE id = ? AND gasto_id = ?');
+                    foreach ($_POST['eliminar_soporte'] as $sid) {
+                        $delStmt->execute([intval($sid), $gastoId]);
+                    }
                 }
-                $stmt = $pdo->prepare('UPDATE gastos SET empleado_id = ?, proveedor_id = ?, fecha_gasto = ?, descripcion = ?, valor = ?, tipo_soporte = ?, soporte = ? WHERE id = ?');
-                $stmt->execute([$_POST['empleado_id'] ?: null, $_POST['proveedor_id'] ?: null, $_POST['fecha_gasto'], $_POST['descripcion'], $nuevoValor, $_POST['tipo_soporte'] ?: 'otro', $soporteVal, $gastoId]);
+                $ordenSop = $pdo->prepare('SELECT COALESCE(MAX(orden), -1) + 1 FROM soportes WHERE gasto_id = ?');
+                $ordenSop->execute([$gastoId]);
+                $ordenSop = (int)$ordenSop->fetchColumn();
+                if (isset($_FILES['soporte_foto']) && $_FILES['soporte_foto']['error'] === UPLOAD_ERR_OK) {
+                    $archivo = handleFotoUpload($_FILES['soporte_foto']);
+                    $pdo->prepare('INSERT INTO soportes (gasto_id, tipo, archivo, orden) VALUES (?, ?, ?, ?)')
+                        ->execute([$gastoId, $_POST['tipo_soporte'] ?: 'otro', $archivo, $ordenSop++]);
+                }
+                if (isset($_FILES['soporte_extra'])) {
+                    $descs = $_POST['soporte_extra_desc'] ?? [];
+                    foreach ($_FILES['soporte_extra']['error'] as $i => $err) {
+                        if ($err === UPLOAD_ERR_OK && !empty($_FILES['soporte_extra']['name'][$i])) {
+                            $file = [
+                                'name' => $_FILES['soporte_extra']['name'][$i],
+                                'type' => $_FILES['soporte_extra']['type'][$i],
+                                'tmp_name' => $_FILES['soporte_extra']['tmp_name'][$i],
+                                'error' => UPLOAD_ERR_OK,
+                                'size' => $_FILES['soporte_extra']['size'][$i],
+                            ];
+                            $archivo = handleFotoUpload($file);
+                            $desc = $descs[$i] ?? '';
+                            $pdo->prepare('INSERT INTO soportes (gasto_id, tipo, archivo, descripcion, orden) VALUES (?, "otro", ?, ?, ?)')
+                                ->execute([$gastoId, $archivo, $desc, $ordenSop++]);
+                        }
+                    }
+                }
                 recalculateCajaFinal($pdo, $gastoActual['caja_id']);
                 $message = 'Gasto actualizado en caja ' . strtoupper($tipoCaja) . '.';
                 break;
@@ -153,6 +212,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = 'Empleado inactivado.';
                 break;
 
+            case 'activar_empleado':
+                $stmt = $pdo->prepare('UPDATE empleados SET estado = "activo" WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Empleado activado.';
+                break;
+
             case 'nuevo_proveedor':
                 $stmt = $pdo->prepare('INSERT INTO proveedores (nit, nombre, telefono, direccion) VALUES (?, ?, ?, ?)');
                 $stmt->execute([$_POST['nit'], $_POST['nombre'], $_POST['telefono'] ?: null, $_POST['direccion'] ?: null]);
@@ -171,6 +236,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = 'Proveedor inactivado.';
                 break;
 
+            case 'activar_proveedor':
+                $stmt = $pdo->prepare('UPDATE proveedores SET estado = "activo" WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Proveedor activado.';
+                break;
+
+            case 'eliminar_proveedor':
+                $stmt = $pdo->prepare('DELETE FROM proveedores WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Proveedor eliminado permanentemente.';
+                break;
+
             case 'nuevo_cargo':
                 $stmt = $pdo->prepare('INSERT INTO cargos (nombre) VALUES (?)');
                 $stmt->execute([$_POST['nombre']]);
@@ -187,6 +264,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare('UPDATE cargos SET estado = "inactivo" WHERE id = ?');
                 $stmt->execute([intval($_POST['id'])]);
                 $message = 'Cargo inactivado.';
+                break;
+
+            case 'activar_cargo':
+                $stmt = $pdo->prepare('UPDATE cargos SET estado = "activo" WHERE id = ?');
+                $stmt->execute([intval($_POST['id'])]);
+                $message = 'Cargo activado.';
                 break;
 
             case 'eliminar_empleado':
@@ -231,8 +314,8 @@ $cajaMayor = getCajaDetails($pdo, 'mayor');
 $movimientosMenor = $cajaMenor ? getCajaMovements($pdo, $cajaMenor['id']) : ['gastos' => [], 'reintegros' => []];
 $movimientosMayor = $cajaMayor ? getCajaMovements($pdo, $cajaMayor['id']) : ['gastos' => [], 'reintegros' => []];
 
-$empleados = $pdo->query('SELECT id, CONCAT(nombres, " ", apellidos) AS nombre FROM empleados WHERE estado = "activo" ORDER BY nombres ASC')->fetchAll();
-$proveedores = $pdo->query('SELECT id, nombre FROM proveedores WHERE estado = "activo" ORDER BY nombre ASC')->fetchAll();
+$empleados = $pdo->query('SELECT id, cedula, CONCAT(nombres, " ", apellidos) AS nombre FROM empleados WHERE estado = "activo" ORDER BY nombres ASC')->fetchAll();
+$proveedores = $pdo->query('SELECT id, nit, nombre FROM proveedores WHERE estado = "activo" ORDER BY nombre ASC')->fetchAll();
 $cargos = $pdo->query('SELECT id, nombre FROM cargos WHERE estado = "activo" ORDER BY nombre ASC')->fetchAll();
 
 $todosEmpleados = $pdo->query('SELECT e.*, c.nombre AS cargo_nombre FROM empleados e LEFT JOIN cargos c ON e.cargo_id = c.id ORDER BY e.apellidos, e.nombres')->fetchAll();
@@ -345,16 +428,25 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                         <div class="card shadow-sm">
                             <div class="card-header d-flex justify-content-between align-items-center bg-white">
                                 <span><i class="bi bi-cart3"></i> Gastos</span>
-                                <div><input type="text" class="form-control form-control-sm" style="width:200px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaGastosMenor')"></div>
+                                <div class="d-flex gap-1 align-items-center">
+                                    <input type="text" class="form-control form-control-sm" style="width:160px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaGastosMenor')">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="quitarFiltros('tablaGastosMenor')" title="Quitar filtros"><i class="bi bi-x-circle"></i></button>
+                                    <select class="form-select form-select-sm" style="width:auto" onchange="cambiarPagina(this.value,'tablaGastosMenor')">
+                                        <option value="20">20</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="card-body p-0">
                                 <?php if (empty($movimientosMenor['gastos'])): ?>
                                     <p class="text-muted p-3 mb-0">Sin gastos registrados.</p>
                                 <?php else: ?>
                                     <div class="table-responsive">
-                                        <table class="table table-sm table-hover mb-0" id="tablaGastosMenor">
+                                        <table class="table table-sm table-hover mb-0 table-gastos" id="tablaGastosMenor" data-caja-id="<?= $cajaMenor['id'] ?>">
                                             <thead class="table-light">
                                                 <tr>
+                                                    <th style="width:32px"><i class="bi bi-grip-vertical"></i></th>
                                                     <th>Fecha</th>
                                                     <th>Descripción</th>
                                                     <th>Valor</th>
@@ -364,15 +456,20 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                             </thead>
                                             <tbody>
                                                 <?php foreach ($movimientosMenor['gastos'] as $gasto): ?>
-                                                    <tr>
+                                                    <tr data-id="<?= $gasto['id'] ?>">
+                                                        <td class="drag-handle text-center"><i class="bi bi-grip-vertical"></i></td>
                                                         <td><?= htmlspecialchars($gasto['fecha_gasto']) ?></td>
                                                         <td><?= htmlspecialchars($gasto['descripcion']) ?>
-                                                            <?php if ($gasto['soporte']): ?>
-                                                                <?php if (strpos($gasto['soporte'], 'uploads/') === 0): ?>
-                                                                    <br><a href="<?= htmlspecialchars($gasto['soporte']) ?>" target="_blank" title="Ver recibo"><img src="<?= htmlspecialchars($gasto['soporte']) ?>" class="img-thumbnail" style="max-height:40px" alt="Recibo"></a>
-                                                                <?php else: ?>
-                                                                    <br><small class="text-muted"><?= htmlspecialchars($gasto['soporte']) ?></small>
-                                                                <?php endif; ?>
+                                                            <?php if (!empty($gasto['soportes'])): ?>
+                                                                <br><div class="d-flex flex-wrap gap-1">
+                                                                <?php foreach ($gasto['soportes'] as $sop): ?>
+                                                                    <?php if ($sop['archivo']): ?>
+                                                                        <a href="<?= htmlspecialchars($sop['archivo']) ?>" target="_blank" title="Ver soporte"><img src="<?= htmlspecialchars($sop['archivo']) ?>" class="img-thumbnail" style="max-height:35px" alt="Soporte"></a>
+                                                                    <?php elseif ($sop['descripcion']): ?>
+                                                                        <small class="text-muted"><?= htmlspecialchars($sop['descripcion']) ?></small>
+                                                                    <?php endif; ?>
+                                                                <?php endforeach; ?>
+                                                                </div>
                                                             <?php endif; ?>
                                                         </td>
                                                         <td class="text-danger fw-semibold"><?= number_format($gasto['valor'], 2, ',', '.') ?></td>
@@ -384,12 +481,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                                 data-fecha-caja="<?= $cajaMenor['fecha_caja'] ?>"
                                                                 data-edit="true" data-id="<?= $gasto['id'] ?>"
                                                                 data-empleado-id="<?= $gasto['empleado_id'] ?>"
+                                                                data-empleado-nombre="<?= htmlspecialchars(trim(($gasto['nombres'] ?? '') . ' ' . ($gasto['apellidos'] ?? '')), ENT_QUOTES) ?>"
                                                                 data-proveedor-id="<?= $gasto['proveedor_id'] ?>"
+                                                                data-proveedor-nombre="<?= htmlspecialchars($gasto['proveedor_nombre'] ?? '', ENT_QUOTES) ?>"
                                                                 data-fecha="<?= $gasto['fecha_gasto'] ?>"
                                                                 data-descripcion="<?= htmlspecialchars($gasto['descripcion'], ENT_QUOTES) ?>"
                                                                 data-valor="<?= $gasto['valor'] ?>"
-                                                                data-tipo-soporte="<?= $gasto['tipo_soporte'] ?>"
-                                                                data-soporte="<?= htmlspecialchars($gasto['soporte'] ?? '', ENT_QUOTES) ?>">
+                                                                data-soportes='<?= htmlspecialchars(json_encode($gasto['soportes']), ENT_QUOTES) ?>'>
                                                                 <i class="bi bi-pencil"></i>
                                                             </button>
                                                             <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este gasto?')">
@@ -402,6 +500,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                 <?php endforeach; ?>
                                             </tbody>
                                         </table>
+                                        <div class="d-flex justify-content-between align-items-center px-2 py-1 border-top">
+                                            <span class="pag-info text-muted small"></span>
+                                            <div>
+                                                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaGastosMenor',-1)">‹</button>
+                                                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaGastosMenor',1)">›</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -411,7 +516,15 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                         <div class="card shadow-sm">
                             <div class="card-header d-flex justify-content-between align-items-center bg-white">
                                 <span><i class="bi bi-arrow-return-left"></i> Reintegros</span>
-                                <div><input type="text" class="form-control form-control-sm" style="width:200px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaReintegrosMenor')"></div>
+                                <div class="d-flex gap-1 align-items-center">
+                                    <input type="text" class="form-control form-control-sm" style="width:160px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaReintegrosMenor')">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="quitarFiltros('tablaReintegrosMenor')" title="Quitar filtros"><i class="bi bi-x-circle"></i></button>
+                                    <select class="form-select form-select-sm" style="width:auto" onchange="cambiarPagina(this.value,'tablaReintegrosMenor')">
+                                        <option value="20">20</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="card-body p-0">
                                 <?php if (empty($movimientosMenor['reintegros'])): ?>
@@ -457,6 +570,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                 <?php endforeach; ?>
                                             </tbody>
                                         </table>
+                                        <div class="d-flex justify-content-between align-items-center px-2 py-1 border-top">
+                                            <span class="pag-info text-muted small"></span>
+                                            <div>
+                                                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaReintegrosMenor',-1)">‹</button>
+                                                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaReintegrosMenor',1)">›</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -523,16 +643,25 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                         <div class="card shadow-sm">
                             <div class="card-header d-flex justify-content-between align-items-center bg-white">
                                 <span><i class="bi bi-cart3"></i> Gastos</span>
-                                <div><input type="text" class="form-control form-control-sm" style="width:200px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaGastosMayor')"></div>
+                                <div class="d-flex gap-1 align-items-center">
+                                    <input type="text" class="form-control form-control-sm" style="width:160px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaGastosMayor')">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="quitarFiltros('tablaGastosMayor')" title="Quitar filtros"><i class="bi bi-x-circle"></i></button>
+                                    <select class="form-select form-select-sm" style="width:auto" onchange="cambiarPagina(this.value,'tablaGastosMayor')">
+                                        <option value="20">20</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="card-body p-0">
                                 <?php if (empty($movimientosMayor['gastos'])): ?>
                                     <p class="text-muted p-3 mb-0">Sin gastos registrados.</p>
                                 <?php else: ?>
                                     <div class="table-responsive">
-                                        <table class="table table-sm table-hover mb-0" id="tablaGastosMayor">
+                                        <table class="table table-sm table-hover mb-0 table-gastos" id="tablaGastosMayor" data-caja-id="<?= $cajaMayor['id'] ?>">
                                             <thead class="table-light">
                                                 <tr>
+                                                    <th style="width:32px"><i class="bi bi-grip-vertical"></i></th>
                                                     <th>Fecha</th>
                                                     <th>Descripción</th>
                                                     <th>Valor</th>
@@ -542,15 +671,20 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                             </thead>
                                             <tbody>
                                                 <?php foreach ($movimientosMayor['gastos'] as $gasto): ?>
-                                                    <tr>
+                                                    <tr data-id="<?= $gasto['id'] ?>">
+                                                        <td class="drag-handle text-center"><i class="bi bi-grip-vertical"></i></td>
                                                         <td><?= htmlspecialchars($gasto['fecha_gasto']) ?></td>
                                                         <td><?= htmlspecialchars($gasto['descripcion']) ?>
-                                                            <?php if ($gasto['soporte']): ?>
-                                                                <?php if (strpos($gasto['soporte'], 'uploads/') === 0): ?>
-                                                                    <br><a href="<?= htmlspecialchars($gasto['soporte']) ?>" target="_blank" title="Ver recibo"><img src="<?= htmlspecialchars($gasto['soporte']) ?>" class="img-thumbnail" style="max-height:40px" alt="Recibo"></a>
-                                                                <?php else: ?>
-                                                                    <br><small class="text-muted"><?= htmlspecialchars($gasto['soporte']) ?></small>
-                                                                <?php endif; ?>
+                                                            <?php if (!empty($gasto['soportes'])): ?>
+                                                                <br><div class="d-flex flex-wrap gap-1">
+                                                                <?php foreach ($gasto['soportes'] as $sop): ?>
+                                                                    <?php if ($sop['archivo']): ?>
+                                                                        <a href="<?= htmlspecialchars($sop['archivo']) ?>" target="_blank" title="Ver soporte"><img src="<?= htmlspecialchars($sop['archivo']) ?>" class="img-thumbnail" style="max-height:35px" alt="Soporte"></a>
+                                                                    <?php elseif ($sop['descripcion']): ?>
+                                                                        <small class="text-muted"><?= htmlspecialchars($sop['descripcion']) ?></small>
+                                                                    <?php endif; ?>
+                                                                <?php endforeach; ?>
+                                                                </div>
                                                             <?php endif; ?>
                                                         </td>
                                                         <td class="text-danger fw-semibold"><?= number_format($gasto['valor'], 2, ',', '.') ?></td>
@@ -562,12 +696,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                                 data-fecha-caja="<?= $cajaMayor['fecha_caja'] ?>"
                                                                 data-edit="true" data-id="<?= $gasto['id'] ?>"
                                                                 data-empleado-id="<?= $gasto['empleado_id'] ?>"
+                                                                data-empleado-nombre="<?= htmlspecialchars(trim(($gasto['nombres'] ?? '') . ' ' . ($gasto['apellidos'] ?? '')), ENT_QUOTES) ?>"
                                                                 data-proveedor-id="<?= $gasto['proveedor_id'] ?>"
+                                                                data-proveedor-nombre="<?= htmlspecialchars($gasto['proveedor_nombre'] ?? '', ENT_QUOTES) ?>"
                                                                 data-fecha="<?= $gasto['fecha_gasto'] ?>"
                                                                 data-descripcion="<?= htmlspecialchars($gasto['descripcion'], ENT_QUOTES) ?>"
                                                                 data-valor="<?= $gasto['valor'] ?>"
-                                                                data-tipo-soporte="<?= $gasto['tipo_soporte'] ?>"
-                                                                data-soporte="<?= htmlspecialchars($gasto['soporte'] ?? '', ENT_QUOTES) ?>">
+                                                                data-soportes='<?= htmlspecialchars(json_encode($gasto['soportes']), ENT_QUOTES) ?>'>
                                                                 <i class="bi bi-pencil"></i>
                                                             </button>
                                                             <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este gasto?')">
@@ -580,6 +715,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                 <?php endforeach; ?>
                                             </tbody>
                                         </table>
+                                        <div class="d-flex justify-content-between align-items-center px-2 py-1 border-top">
+                                            <span class="pag-info text-muted small"></span>
+                                            <div>
+                                                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaGastosMayor',-1)">‹</button>
+                                                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaGastosMayor',1)">›</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -589,7 +731,15 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                         <div class="card shadow-sm">
                             <div class="card-header d-flex justify-content-between align-items-center bg-white">
                                 <span><i class="bi bi-arrow-return-left"></i> Reintegros</span>
-                                <div><input type="text" class="form-control form-control-sm" style="width:200px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaReintegrosMayor')"></div>
+                                <div class="d-flex gap-1 align-items-center">
+                                    <input type="text" class="form-control form-control-sm" style="width:160px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaReintegrosMayor')">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="quitarFiltros('tablaReintegrosMayor')" title="Quitar filtros"><i class="bi bi-x-circle"></i></button>
+                                    <select class="form-select form-select-sm" style="width:auto" onchange="cambiarPagina(this.value,'tablaReintegrosMayor')">
+                                        <option value="20">20</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="card-body p-0">
                                 <?php if (empty($movimientosMayor['reintegros'])): ?>
@@ -635,6 +785,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                 <?php endforeach; ?>
                                             </tbody>
                                         </table>
+                                        <div class="d-flex justify-content-between align-items-center px-2 py-1 border-top">
+                                            <span class="pag-info text-muted small"></span>
+                                            <div>
+                                                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaReintegrosMayor',-1)">‹</button>
+                                                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaReintegrosMayor',1)">›</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -666,17 +823,36 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                 <?php if (empty($todosEmpleados)): ?>
                     <div class="alert alert-light">No hay empleados registrados.</div>
                 <?php else: ?>
+                    <div class="mb-2 d-flex gap-2 align-items-center">
+                        <input type="text" class="form-control form-control-sm" style="width:250px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaEmpleados')">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="quitarFiltros('tablaEmpleados')"><i class="bi bi-x-circle"></i> Quitar filtros</button>
+                        <select class="form-select form-select-sm ms-auto" style="width:auto" onchange="cambiarPagina(this.value,'tablaEmpleados')">
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                        <span class="text-muted small">por página</span>
+                    </div>
                     <div class="card shadow-sm">
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-striped table-hover mb-0">
+                                <table class="table table-striped table-hover mb-0" id="tablaEmpleados">
                                     <thead class="table-light">
                                         <tr>
-                                            <th>Cédula</th>
-                                            <th>Nombre</th>
-                                            <th>Cargo</th>
-                                            <th>Teléfono</th>
-                                            <th>Estado</th>
+                                            <th>Cédula<br><input type="text" class="form-control form-control-sm" placeholder="Filtrar..." onkeyup="filtrarColumna(this,'tablaEmpleados',0)" style="width:100%;"></th>
+                                            <th>Nombre<br><input type="text" class="form-control form-control-sm" placeholder="Filtrar..." onkeyup="filtrarColumna(this,'tablaEmpleados',1)" style="width:100%;"></th>
+                                            <th>Cargo<br><select class="form-select form-select-sm" onchange="filtrarColumnaSelect(this,'tablaEmpleados',2)" style="width:100%;">
+                                                <option value="">Todos</option>
+                                                <?php foreach ($cargos as $c): ?>
+                                                    <option value="<?= htmlspecialchars($c['nombre']) ?>"><?= htmlspecialchars($c['nombre']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select></th>
+                                            <th>Teléfono<br><input type="text" class="form-control form-control-sm" placeholder="Filtrar..." onkeyup="filtrarColumna(this,'tablaEmpleados',3)" style="width:100%;"></th>
+                                            <th>Estado<br><select class="form-select form-select-sm" onchange="filtrarColumnaSelect(this,'tablaEmpleados',4)" style="width:100%;">
+                                                <option value="">Todos</option>
+                                                <option value="activo">Activo</option>
+                                                <option value="inactivo">Inactivo</option>
+                                            </select></th>
                                             <th style="width:160px">Acciones</th>
                                         </tr>
                                     </thead>
@@ -693,19 +869,26 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                         data-bs-toggle="modal" data-bs-target="#modalEmpleado"
                                                         data-edit="true" data-id="<?= $emp['id'] ?>"
                                                         data-cedula="<?= htmlspecialchars($emp['cedula'], ENT_QUOTES) ?>"
-                                                        data-nombres="<?= htmlspecialchars($emp['nombres'], ENT_QUOTES) ?>"
-                                                        data-apellidos="<?= htmlspecialchars($emp['apellidos'], ENT_QUOTES) ?>"
-                                                        data-cargo-id="<?= $emp['cargo_id'] ?>"
-                                                        data-telefono="<?= htmlspecialchars($emp['telefono'] ?? '', ENT_QUOTES) ?>">
+                        data-nombres="<?= htmlspecialchars($emp['nombres'], ENT_QUOTES) ?>"
+                        data-apellidos="<?= htmlspecialchars($emp['apellidos'], ENT_QUOTES) ?>"
+                        data-cargo-id="<?= $emp['cargo_id'] ?>"
+                        data-cargo-nombre="<?= htmlspecialchars($emp['cargo_nombre'] ?? '', ENT_QUOTES) ?>"
+                        data-estado="<?= htmlspecialchars($emp['estado'] ?? 'activo', ENT_QUOTES) ?>"
+                        data-telefono="<?= htmlspecialchars($emp['telefono'] ?? '', ENT_QUOTES) ?>">
                                                         <i class="bi bi-pencil"></i>
                                                     </button>
                                                     <?php if ($emp['estado'] === 'activo'): ?>
-                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este empleado? Ya no se podrá reactivar.')">
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este empleado?')">
                                                             <input type="hidden" name="action" value="inactivar_empleado">
                                                             <input type="hidden" name="id" value="<?= $emp['id'] ?>">
-                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Inactivar"><i class="bi bi-person-x"></i></button>
+                                                            <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-1" title="Inactivar"><i class="bi bi-person-x"></i></button>
                                                         </form>
                                                     <?php else: ?>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Activar este empleado?')">
+                                                            <input type="hidden" name="action" value="activar_empleado">
+                                                            <input type="hidden" name="id" value="<?= $emp['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-success py-0 px-1" title="Activar"><i class="bi bi-person-check"></i></button>
+                                                        </form>
                                                         <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar permanentemente este empleado?')">
                                                             <input type="hidden" name="action" value="eliminar_empleado">
                                                             <input type="hidden" name="id" value="<?= $emp['id'] ?>">
@@ -717,6 +900,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                         <?php endforeach; ?>
                                     </tbody>
                                 </table>
+                                <div class="d-flex justify-content-between align-items-center px-2 py-1 border-top">
+                                    <span class="pag-info text-muted small"></span>
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaEmpleados',-1)">‹</button>
+                                        <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaEmpleados',1)">›</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -736,10 +926,20 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                 <?php if (empty($todosProveedores)): ?>
                     <div class="alert alert-light">No hay proveedores registrados.</div>
                 <?php else: ?>
+                    <div class="mb-2 d-flex gap-2 align-items-center">
+                        <input type="text" class="form-control form-control-sm" style="width:250px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaProveedores')">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="quitarFiltros('tablaProveedores')"><i class="bi bi-x-circle"></i> Quitar filtros</button>
+                        <select class="form-select form-select-sm ms-auto" style="width:auto" onchange="cambiarPagina(this.value,'tablaProveedores')">
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                        <span class="text-muted small">por página</span>
+                    </div>
                     <div class="card shadow-sm">
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-striped table-hover mb-0">
+                                <table class="table table-striped table-hover mb-0" id="tablaProveedores">
                                     <thead class="table-light">
                                         <tr>
                                             <th>NIT</th>
@@ -764,15 +964,27 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                         data-edit="true" data-id="<?= $prov['id'] ?>"
                                                         data-nit="<?= htmlspecialchars($prov['nit'], ENT_QUOTES) ?>"
                                                         data-nombre="<?= htmlspecialchars($prov['nombre'], ENT_QUOTES) ?>"
-                                                        data-telefono="<?= htmlspecialchars($prov['telefono'] ?? '', ENT_QUOTES) ?>"
-                                                        data-direccion="<?= htmlspecialchars($prov['direccion'] ?? '', ENT_QUOTES) ?>">
+                        data-telefono="<?= htmlspecialchars($prov['telefono'] ?? '', ENT_QUOTES) ?>"
+                        data-direccion="<?= htmlspecialchars($prov['direccion'] ?? '', ENT_QUOTES) ?>"
+                        data-estado="<?= htmlspecialchars($prov['estado'] ?? 'activo', ENT_QUOTES) ?>">
                                                         <i class="bi bi-pencil"></i>
                                                     </button>
                                                     <?php if ($prov['estado'] === 'activo'): ?>
                                                         <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este proveedor?')">
                                                             <input type="hidden" name="action" value="inactivar_proveedor">
                                                             <input type="hidden" name="id" value="<?= $prov['id'] ?>">
-                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Inactivar"><i class="bi bi-building-x"></i></button>
+                                                            <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-1" title="Inactivar"><i class="bi bi-building-x"></i></button>
+                                                        </form>
+                                                    <?php else: ?>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Activar este proveedor?')">
+                                                            <input type="hidden" name="action" value="activar_proveedor">
+                                                            <input type="hidden" name="id" value="<?= $prov['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-success py-0 px-1" title="Activar"><i class="bi bi-building-check"></i></button>
+                                                        </form>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar permanentemente este proveedor?')">
+                                                            <input type="hidden" name="action" value="eliminar_proveedor">
+                                                            <input type="hidden" name="id" value="<?= $prov['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
                                                         </form>
                                                     <?php endif; ?>
                                                 </td>
@@ -780,6 +992,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                         <?php endforeach; ?>
                                     </tbody>
                                 </table>
+                                <div class="d-flex justify-content-between align-items-center px-2 py-1 border-top">
+                                    <span class="pag-info text-muted small"></span>
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaProveedores',-1)">‹</button>
+                                        <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaProveedores',1)">›</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -799,10 +1018,20 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                 <?php if (empty($todosCargos)): ?>
                     <div class="alert alert-light">No hay cargos registrados.</div>
                 <?php else: ?>
+                    <div class="mb-2 d-flex gap-2 align-items-center">
+                        <input type="text" class="form-control form-control-sm" style="width:250px" placeholder="Buscar..." onkeyup="filtrarTabla(this, 'tablaCargos')">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="quitarFiltros('tablaCargos')"><i class="bi bi-x-circle"></i> Quitar filtros</button>
+                        <select class="form-select form-select-sm ms-auto" style="width:auto" onchange="cambiarPagina(this.value,'tablaCargos')">
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                        <span class="text-muted small">por página</span>
+                    </div>
                     <div class="card shadow-sm">
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-striped table-hover mb-0">
+                                <table class="table table-striped table-hover mb-0" id="tablaCargos">
                                     <thead class="table-light">
                                         <tr>
                                             <th>ID</th>
@@ -825,12 +1054,17 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                                         <i class="bi bi-pencil"></i>
                                                     </button>
                                                     <?php if ($cargo['estado'] === 'activo'): ?>
-                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este cargo? Ya no se podrá reactivar.')">
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este cargo?')">
                                                             <input type="hidden" name="action" value="inactivar_cargo">
                                                             <input type="hidden" name="id" value="<?= $cargo['id'] ?>">
-                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Inactivar"><i class="bi bi-slash-circle"></i></button>
+                                                            <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-1" title="Inactivar"><i class="bi bi-slash-circle"></i></button>
                                                         </form>
                                                     <?php else: ?>
+                                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Activar este cargo?')">
+                                                            <input type="hidden" name="action" value="activar_cargo">
+                                                            <input type="hidden" name="id" value="<?= $cargo['id'] ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-success py-0 px-1" title="Activar"><i class="bi bi-check-circle"></i></button>
+                                                        </form>
                                                         <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar permanentemente este cargo?')">
                                                             <input type="hidden" name="action" value="eliminar_cargo">
                                                             <input type="hidden" name="id" value="<?= $cargo['id'] ?>">
@@ -842,6 +1076,13 @@ $festivosActivos = $pdo->query('SELECT nombre, fecha FROM festivos WHERE estado 
                                         <?php endforeach; ?>
                                     </tbody>
                                 </table>
+                                <div class="d-flex justify-content-between align-items-center px-2 py-1 border-top">
+                                    <span class="pag-info text-muted small"></span>
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaCargos',-1)">‹</button>
+                                        <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="irPagina('tablaCargos',1)">›</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -83,11 +83,18 @@ function getCajaMovements($pdo, $cajaId) {
         FROM gastos g
         LEFT JOIN empleados e ON g.empleado_id = e.id
         LEFT JOIN proveedores p ON g.proveedor_id = p.id
-        WHERE g.caja_id = ? ORDER BY g.creado_en DESC');
+        WHERE g.caja_id = ? ORDER BY g.orden ASC, g.id DESC');
     $gastos->execute([$cajaId]);
+    $gastos = $gastos->fetchAll();
+    $soportesStmt = $pdo->prepare('SELECT * FROM soportes WHERE gasto_id = ? ORDER BY orden, id');
+    foreach ($gastos as &$gasto) {
+        $soportesStmt->execute([$gasto['id']]);
+        $gasto['soportes'] = $soportesStmt->fetchAll();
+    }
+    unset($gasto);
     $reintegros = $pdo->prepare('SELECT * FROM reintegros WHERE caja_id = ? ORDER BY creado_en DESC');
     $reintegros->execute([$cajaId]);
-    return ['gastos' => $gastos->fetchAll(), 'reintegros' => $reintegros->fetchAll()];
+    return ['gastos' => $gastos, 'reintegros' => $reintegros->fetchAll()];
 }
 
 function getOpenCajas($pdo) {

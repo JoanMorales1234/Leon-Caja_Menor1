@@ -39,6 +39,16 @@ try {
                 $stmt->execute([$_POST['id']]);
                 $message = 'Proveedor inactivado correctamente.';
             }
+            if ($_POST['action'] === 'activar_proveedor') {
+                $stmt = $pdo->prepare('UPDATE proveedores SET estado = "activo" WHERE id = ?');
+                $stmt->execute([$_POST['id']]);
+                $message = 'Proveedor activado correctamente.';
+            }
+            if ($_POST['action'] === 'eliminar_proveedor') {
+                $stmt = $pdo->prepare('DELETE FROM proveedores WHERE id = ?');
+                $stmt->execute([$_POST['id']]);
+                $message = 'Proveedor eliminado permanentemente.';
+            }
         }
     }
 } catch (Exception $e) {
@@ -209,10 +219,21 @@ $viewProveedor = $viewId ? getProveedor($pdo, $viewId) : null;
                                     <a class="btn btn-sm btn-outline-primary" href="proveedores.php?view=<?= $proveedor['id'] ?>">Ver</a>
                                     <a class="btn btn-sm btn-outline-success" href="proveedores.php?edit=<?= $proveedor['id'] ?>">Editar</a>
                                     <?php if ($proveedor['estado'] === 'activo'): ?>
-                                        <form method="post" class="d-inline">
+                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este proveedor?')">
                                             <input type="hidden" name="action" value="inactivar_proveedor">
                                             <input type="hidden" name="id" value="<?= $proveedor['id'] ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">Inactivar</button>
+                                            <button type="submit" class="btn btn-sm btn-outline-warning">Inactivar</button>
+                                        </form>
+                                    <?php else: ?>
+                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Activar este proveedor?')">
+                                            <input type="hidden" name="action" value="activar_proveedor">
+                                            <input type="hidden" name="id" value="<?= $proveedor['id'] ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-success">Activar</button>
+                                        </form>
+                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar permanentemente este proveedor?')">
+                                            <input type="hidden" name="action" value="eliminar_proveedor">
+                                            <input type="hidden" name="id" value="<?= $proveedor['id'] ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
                                         </form>
                                     <?php endif; ?>
                                 </td>

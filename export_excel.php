@@ -86,7 +86,7 @@ function getMovs($pdo, $cajaId, $tipoMov) {
             LEFT JOIN empleados e ON g.empleado_id = e.id
             LEFT JOIN cargos ca ON e.cargo_id = ca.id
             LEFT JOIN proveedores p ON g.proveedor_id = p.id
-            WHERE g.caja_id = ? ORDER BY g.creado_en ASC');
+            WHERE g.caja_id = ? ORDER BY g.orden DESC, g.id ASC');
     } else {
         $stmt = $pdo->prepare('SELECT r.* FROM reintegros r WHERE r.caja_id = ? ORDER BY r.creado_en ASC');
     }

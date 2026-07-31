@@ -1,0 +1,243 @@
+<html xml:lang="es">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <style>
+        body { font-family: Calibri, Arial, sans-serif; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        th, td { border: 1px solid #999; padding: 4px 6px; font-size: 10pt; vertical-align: top; }
+        th { background: #4472C4; color: #fff; font-weight: bold; text-align: center; }
+        .title-row td { font-size: 28pt; font-weight: bold; text-align: center; border: none; padding: 8px; }
+        .section-title td { font-size: 12pt; font-weight: bold; text-align: left; border: none; padding: 6px 0; }
+        .summary-reintegro td { font-weight: bold; background: #E2EFDA; }
+        .summary-saldo-actual td { font-weight: bold; background: #D9E2F3; font-size: 12pt; }
+        .saldo-anterior td { font-weight: bold; background: #D9E2F3; }
+        .total-gastos td { font-weight: bold; background: #FCE4D6; }
+        .nuevo-saldo td { font-weight: bold; background: #E2EFDA; }
+        .funcionarios th { background: #70AD47; }
+        .page-break { page-break-before: always; }
+        .valor-col { text-align: right; white-space: nowrap; }
+        .fecha-col { text-align: center; white-space: nowrap; }
+        .cedula-col { text-align: center; }
+        .no-data td { text-align: center; color: #999; font-style: italic; }
+    </style>
+</head>
+<body>
+        <table>
+                <tr>
+            <td colspan="8" style="text-align:center;border:none;padding:4px;">
+                <img src="uploads/logo.png?t=1781023722" alt="Logo" style="max-width:300px;max-height:80px;">
+            </td>
+        </tr>
+                <tr class="title-row">
+            <td colspan="8">CAJA MENOR</td>
+        </tr>
+        <tr class="section-title">
+            <td colspan="8">JUNE 06 2026</td>
+        </tr>
+        <tr>
+            <th>FECHA</th>
+            <th>CEDULA(NIT)</th>
+            <th>NOMBRE</th>
+            <th>FUNCIONARIO</th>
+            <th>DESCRIPCION O DETALLE</th>
+            <th>NIT</th>
+            <th>PROVEEDOR</th>
+            <th>VALOR</th>
+        </tr>
+        <tr class="saldo-anterior">
+            <td colspan="7" style="text-align:right">SALDO ANTERIOR</td>
+            <td class="valor-col">235.636,55</td>
+        </tr>
+                                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">5827506</td>
+                <td>GOANY LEIVA</td>
+                <td>PRODUCCION</td>
+                <td>COMPRA DE RODAMIENTOS PRODUCCION</td>
+                <td class="cedula-col">142400411-4</td>
+                <td>RODAMIENTOS Y REPUESTOS GIRO</td>
+                <td class="valor-col">$ 25.000,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">5827506</td>
+                <td>GOANY LEIVA</td>
+                <td>PRODUCCION</td>
+                <td>COMPRA DE BALINERAS PRODUCCIÓN </td>
+                <td class="cedula-col">890700877-5</td>
+                <td>EL RODAMIENTO S.A.</td>
+                <td class="valor-col">$ 16.347,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA GALLEGO</td>
+                <td>RECEPCION</td>
+                <td>COMPRA CAJA DE TAPABOCAS NEGRO Y CAJA TAPABOCAS EMPAQUE INDIVIDUAL </td>
+                <td class="cedula-col">65760977</td>
+                <td>ALFADOTACIONES DEL TOLIMA</td>
+                <td class="valor-col">$ 25.500,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA GALLEGO</td>
+                <td>RECEPCION</td>
+                <td>COMPRA BARIOS CEREALES DELIRIOS </td>
+                <td class="cedula-col">900276962</td>
+                <td>D1 SAS</td>
+                <td class="valor-col">$ 32.600,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">13239826</td>
+                <td>EDISON LEAL</td>
+                <td>RECEPCION</td>
+                <td>PARQUEADERO MENSAJERO </td>
+                <td class="cedula-col">13239826</td>
+                <td>EDISON LEAL</td>
+                <td class="valor-col">$ 1.900,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">13239826</td>
+                <td>EDISON LEAL</td>
+                <td>RECEPCION</td>
+                <td>PARQUEADERO ENVIO ESPINAL MENSAJERO</td>
+                <td class="cedula-col">14209150-7</td>
+                <td>APARCADERO MAFEGILI</td>
+                <td class="valor-col">$ 1.900,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">28542010</td>
+                <td>ADRIANA NARVAEZ</td>
+                <td>DIRECCION DE COSTOS</td>
+                <td>PARQUEADERO ADRIANA VISITA HOTELES</td>
+                <td class="cedula-col">14231632-7</td>
+                <td>PARQUEADERO LA 12 </td>
+                <td class="valor-col">$ 7.400,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">28542010</td>
+                <td>ADRIANA NARVAEZ</td>
+                <td>DIRECCION DE COSTOS</td>
+                <td>PARQUEADERO ADRIANA VISITA HOTELES</td>
+                <td class="cedula-col">11104909221</td>
+                <td>PARQUEADERO OASIS</td>
+                <td class="valor-col">$ 7.400,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA GALLEGO</td>
+                <td>RECEPCION</td>
+                <td>TRANSPORTE LLEVAR BODEGA SANTA LUCIA </td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA  GALLEGO</td>
+                <td class="valor-col">$ 17.800,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA GALLEGO</td>
+                <td>RECEPCION</td>
+                <td>TRANSPORTE TAPAS FLORIDA</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA  GALLEGO</td>
+                <td class="valor-col">$ 20.000,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">13239826</td>
+                <td>EDISON LEAL</td>
+                <td>RECEPCION</td>
+                <td>ALMUERZO SABADO</td>
+                <td class="cedula-col">13239826</td>
+                <td>EDISON LEAL</td>
+                <td class="valor-col">$ 14.000,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">13239826</td>
+                <td>EDISON LEAL</td>
+                <td>RECEPCION</td>
+                <td>ENVIO TERMINAL RAMIREZ CARDOZO</td>
+                <td class="cedula-col">13239826</td>
+                <td>EDISON LEAL</td>
+                <td class="valor-col">$ 15.000,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA GALLEGO</td>
+                <td>RECEPCION</td>
+                <td>COMPRA MEDICAMENTO CHAPSTICK PROT. GERENCIA</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA  GALLEGO</td>
+                <td class="valor-col">$ 20.250,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA GALLEGO</td>
+                <td>RECEPCION</td>
+                <td>DESAYUNO REUNION LAURA 
+CASTIBLANCO </td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA  GALLEGO</td>
+                <td class="valor-col">$ 40.750,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA GALLEGO</td>
+                <td>RECEPCION</td>
+                <td>DESAYUNO REUNION LAURA CASTIBLANCO </td>
+                <td class="cedula-col">65737477</td>
+                <td>SANDRA  GALLEGO</td>
+                <td class="valor-col">$ 40.750,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">14106438</td>
+                <td>DIEGO RADA</td>
+                <td>CONTRATACION</td>
+                <td>GASTOS VARIOS ESPINAL </td>
+                <td class="cedula-col">14106438</td>
+                <td>DIEGO RADA</td>
+                <td class="valor-col">$ 45.000,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">14106438</td>
+                <td>DIEGO RADA</td>
+                <td>CONTRATACION</td>
+                <td>GASTOS VARIOS ESPINAL </td>
+                <td class="cedula-col">14106438</td>
+                <td>DIEGO RADA</td>
+                <td class="valor-col">$ 45.000,00</td>
+            </tr>
+                    <tr>
+                <td class="fecha-col">6/6/2026</td>
+                <td class="cedula-col">14106438</td>
+                <td>DIEGO RADA</td>
+                <td>CONTRATACION</td>
+                <td>GASTOS VARIOS ESPINAL</td>
+                <td class="cedula-col">14106438</td>
+                <td>DIEGO RADA</td>
+                <td class="valor-col">$ 40.000,00</td>
+            </tr>
+                        <tr class="total-gastos">
+            <td colspan="7" style="text-align:right">TOTAL GASTOS</td>
+            <td class="valor-col">$ 416.597,00</td>
+        </tr>
+
+        <tr class="nuevo-saldo">
+            <td colspan="7" style="text-align:right">NUEVO SALDO</td>
+            <td class="valor-col">$ -180.960,45</td>
+        </tr>
+            </table>
+    </body>
+</html>

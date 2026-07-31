@@ -45,6 +45,11 @@ try {
                 $stmt->execute([$_POST['id']]);
                 $message = 'Empleado inactivado correctamente.';
             }
+            if ($_POST['action'] === 'activar_empleado') {
+                $stmt = $pdo->prepare('UPDATE empleados SET estado = "activo" WHERE id = ?');
+                $stmt->execute([$_POST['id']]);
+                $message = 'Empleado activado correctamente.';
+            }
             if ($_POST['action'] === 'eliminar_empleado') {
                 $stmt = $pdo->prepare('DELETE FROM empleados WHERE id = ?');
                 $stmt->execute([$_POST['id']]);
@@ -239,12 +244,17 @@ $viewEmpleado = $viewId ? getEmpleado($pdo, $viewId) : null;
                                     <a class="btn btn-sm btn-outline-primary" href="empleados.php?view=<?= $empleado['id'] ?>">Ver</a>
                                     <a class="btn btn-sm btn-outline-success" href="empleados.php?edit=<?= $empleado['id'] ?>">Editar</a>
                                     <?php if ($empleado['estado'] === 'activo'): ?>
-                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este empleado? Ya no se podrá reactivar.')">
+                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Inactivar este empleado?')">
                                             <input type="hidden" name="action" value="inactivar_empleado">
                                             <input type="hidden" name="id" value="<?= $empleado['id'] ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">Inactivar</button>
+                                            <button type="submit" class="btn btn-sm btn-outline-warning">Inactivar</button>
                                         </form>
                                     <?php else: ?>
+                                        <form method="post" class="d-inline" onsubmit="return confirm('¿Activar este empleado?')">
+                                            <input type="hidden" name="action" value="activar_empleado">
+                                            <input type="hidden" name="id" value="<?= $empleado['id'] ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-success">Activar</button>
+                                        </form>
                                         <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar permanentemente este empleado?')">
                                             <input type="hidden" name="action" value="eliminar_empleado">
                                             <input type="hidden" name="id" value="<?= $empleado['id'] ?>">

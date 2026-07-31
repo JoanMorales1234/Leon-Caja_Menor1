@@ -14,24 +14,34 @@
                         <input type="hidden" name="caja_id" id="gastoCajaId" value="0">
                         <input type="hidden" name="tipo_caja" id="gastoTipoCaja" value="">
                         <input type="hidden" name="MAX_FILE_SIZE" value="5242880">
+                        <div id="soportesExistentes" style="display:none;" class="mb-3">
+                            <label class="form-label fw-semibold">Soportes actuales</label>
+                            <div id="soportesLista"></div>
+                        </div>
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">Empleado</label>
-                                <select class="form-select" name="empleado_id" id="gastoEmpleado">
-                                    <option value="">Sin empleado</option>
-                                    <?php foreach ($empleados as $emp): ?>
-                                        <option value="<?= $emp['id'] ?>"><?= htmlspecialchars($emp['nombre']) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
+                                <div class="search-dropdown" data-select="gastoEmpleado" style="position:relative;">
+                                    <input type="text" class="form-control form-control-sm search-dropdown-input" placeholder="Buscar y seleccionar..." autocomplete="off">
+                                    <input type="hidden" name="empleado_id" id="gastoEmpleado" value="">
+                                    <div class="search-dropdown-list" style="display:none;max-height:180px;overflow-y:auto;border:1px solid #ccc;position:absolute;background:#fff;z-index:1050;width:100%;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                                        <?php foreach ($empleados as $emp): ?>
+                                            <div class="search-dropdown-item" data-value="<?= $emp['id'] ?>" data-search="<?= htmlspecialchars($emp['nombre'] . ' ' . $emp['cedula']) ?>"><?= htmlspecialchars($emp['nombre']) ?></div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Proveedor</label>
-                                <select class="form-select" name="proveedor_id" id="gastoProveedor">
-                                    <option value="">Sin proveedor</option>
-                                    <?php foreach ($proveedores as $prov): ?>
-                                        <option value="<?= $prov['id'] ?>"><?= htmlspecialchars($prov['nombre']) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
+                                <div class="search-dropdown" data-select="gastoProveedor" style="position:relative;">
+                                    <input type="text" class="form-control form-control-sm search-dropdown-input" placeholder="Buscar y seleccionar..." autocomplete="off">
+                                    <input type="hidden" name="proveedor_id" id="gastoProveedor" value="">
+                                    <div class="search-dropdown-list" style="display:none;max-height:180px;overflow-y:auto;border:1px solid #ccc;position:absolute;background:#fff;z-index:1050;width:100%;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                                        <?php foreach ($proveedores as $prov): ?>
+                                            <div class="search-dropdown-item" data-value="<?= $prov['id'] ?>" data-search="<?= htmlspecialchars($prov['nombre'] . ' ' . $prov['nit']) ?>"><?= htmlspecialchars($prov['nombre']) ?></div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Fecha del gasto</label>
@@ -47,6 +57,12 @@
                                 <div id="gastoValorMsg" class="form-text"></div>
                             </div>
                             <div class="col-md-4">
+                                <label class="form-label">Foto del recibo</label>
+                                <input class="form-control" type="file" name="soporte_foto" id="gastoSoporteFoto" accept="image/*" capture="environment">
+                                <small class="form-text text-muted">Toma una foto o selecciona una imagen</small>
+                                <div id="gastoFotoPreview" class="mt-1"></div>
+                            </div>
+                            <div class="col-md-4">
                                 <label class="form-label">Tipo soporte</label>
                                 <select class="form-select" name="tipo_soporte" id="gastoTipoSoporte">
                                     <option value="factura">Factura</option>
@@ -54,13 +70,14 @@
                                     <option value="otro">Otro</option>
                                 </select>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Foto del recibo</label>
-                                <input class="form-control" type="file" name="soporte_foto" id="gastoSoporteFoto" accept="image/*" capture="environment">
-                                <input type="hidden" name="soporte" id="gastoSoporte">
-                                <small class="form-text text-muted">Toma una foto o selecciona una imagen</small>
-                                <div id="gastoFotoPreview" class="mt-1"></div>
-                            </div>
+                        </div>
+                        <hr>
+                        <div class="mb-2">
+                            <label class="form-label fw-semibold">Soportes adicionales</label>
+                            <div id="soportesAdicionales"></div>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAgregarSoporte">
+                                <i class="bi bi-plus-lg"></i> Agregar otro soporte
+                            </button>
                         </div>
                     </div>
                     <div id="cropContainer" style="display:none;">
