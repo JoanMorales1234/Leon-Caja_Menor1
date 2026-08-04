@@ -155,7 +155,8 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('modalGastoLabel').textContent = titulo + ' - Caja ' + (gastoTipoActual === 'menor' ? 'Menor' : 'Mayor');
 
             if (gastoFecha) {
-                gastoFecha.value = fechaCaja || new Date().toISOString().split('T')[0];
+                var fechaGastoAttr = isEdit ? btn.getAttribute('data-fecha-gasto') : null;
+                gastoFecha.value = (isEdit && fechaGastoAttr) ? fechaGastoAttr : (fechaCaja || new Date().toISOString().split('T')[0]);
             }
 
             var sopExistentes = document.getElementById('soportesExistentes');
@@ -310,7 +311,8 @@ document.addEventListener('DOMContentLoaded', function () {
             // Always set fecha from caja's fecha_caja (locked)
             const reintegroFecha = document.getElementById('reintegroFecha');
             if (reintegroFecha) {
-                reintegroFecha.value = fechaCaja || new Date().toISOString().split('T')[0];
+                var fechaReint = isEdit ? btn.getAttribute('data-fecha-reintegro') : null;
+                reintegroFecha.value = (isEdit && fechaReint) ? fechaReint : (fechaCaja || new Date().toISOString().split('T')[0]);
             }
 
             if (isEdit) {
@@ -460,12 +462,14 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // === RE-OPEN LAST ACTIVE TAB AFTER RELOAD ===
-    const activeTab = sessionStorage.getItem('activeTab');
+    const hashTarget = window.location.hash;
+    let activeTab = hashTarget ? hashTarget : sessionStorage.getItem('activeTab');
     if (activeTab) {
         const tab = document.querySelector('[data-bs-target="' + activeTab + '"]');
         if (tab) {
             var bsTab = new bootstrap.Tab(tab);
             bsTab.show();
+            if (hashTarget) sessionStorage.setItem('activeTab', activeTab);
         }
     }
     document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function (tab) {
