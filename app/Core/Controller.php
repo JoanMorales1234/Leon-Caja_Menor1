@@ -23,9 +23,13 @@ abstract class Controller
         require $file;
     }
 
-    protected function redirect($url, $fragment = '')
+    protected function redirect($url, $params = '')
     {
-        header('Location: ' . url($url) . ($fragment ? '#' . ltrim($fragment, '#') : ''));
+        if (is_array($params)) {
+            header('Location: ' . url($url, $params));
+        } else {
+            header('Location: ' . url($url) . ($params ? '#' . ltrim($params, '#') : ''));
+        }
         exit;
     }
 }

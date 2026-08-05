@@ -552,7 +552,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Valor inicial ($)</label>
-                            <input class="form-control" type="number" step="0.01" min="0" name="valor_inicial" id="editarCajaValor">
+                            <input class="form-control" type="number" step="0.01" name="valor_inicial" id="editarCajaValor">
                         </div>
                     </div>
                 </div>

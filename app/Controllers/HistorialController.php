@@ -213,7 +213,7 @@ class HistorialController extends Controller
         if ($cajaId > 0) $qs['detalle'] = $cajaId;
         $qs['msg'] = $message;
         $qs['tipo'] = $type;
-        $this->redirect('historial', '#' . http_build_query($qs));
+        $this->redirect('historial', $qs);
     }
 
     private function getDetalleGastos($cajaId)
