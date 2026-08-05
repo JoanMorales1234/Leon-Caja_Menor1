@@ -75,6 +75,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
     <div class="card shadow-sm filter-card">
         <div class="card-body">
             <form method="get" action="<?= url('historial') ?>" class="row g-2 align-items-end">
+                <input type="hidden" name="url" value="historial">
                 <div class="col-auto">
                     <label class="form-label small mb-0">Estado</label>
                     <select class="form-select form-select-sm" name="estado">

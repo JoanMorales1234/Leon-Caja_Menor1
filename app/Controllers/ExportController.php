@@ -6,7 +6,7 @@ use App\Core\Controller;
 use App\Models\Caja;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Writer\Xls as XlsWriter;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
 
 class ExportController extends Controller
 {
@@ -125,15 +125,17 @@ class ExportController extends Controller
 
     public function syscafe()
     {
-        set_time_limit(600);
+        set_time_limit(1200);
         require_once ROOT_PATH . '/vendor/autoload.php';
 
         $cajaId = isset($_GET['caja_id']) ? (int)$_GET['caja_id'] : 0;
         $tipo = isset($_GET['tipo']) && in_array($_GET['tipo'], ['menor', 'mayor']) ? $_GET['tipo'] : '';
+        $estado = isset($_GET['estado']) && in_array($_GET['estado'], ['abierta', 'cerrada', 'todas']) ? $_GET['estado'] : 'todas';
         $mes = isset($_GET['mes']) ? (int)$_GET['mes'] : 0;
         $anio = isset($_GET['anio']) ? (int)$_GET['anio'] : 0;
         $desde = $_GET['desde'] ?? '';
         $hasta = $_GET['hasta'] ?? '';
+        $ultimos = isset($_GET['ultimos']) ? (int)$_GET['ultimos'] : 0;
 
         if (!$tipo && !$cajaId) die('Debe especificar ?tipo=menor, ?tipo=mayor o ?caja_id=N');
 
@@ -146,11 +148,13 @@ class ExportController extends Controller
                 IFNULL((SELECT SUM(valor) FROM gastos WHERE caja_id = c.id), 0) AS total_gastos
                 FROM cajas c WHERE c.tipo_caja = ?';
             $params = [$tipo];
+            if ($estado !== 'todas') { $sql .= ' AND c.estado = ?'; $params[] = $estado; }
             if ($mes > 0) { $sql .= ' AND MONTH(c.fecha_caja) = ?'; $params[] = $mes; }
             if ($anio > 0) { $sql .= ' AND YEAR(c.fecha_caja) = ?'; $params[] = $anio; }
             if ($desde) { $sql .= ' AND c.fecha_caja >= ?'; $params[] = $desde; }
             if ($hasta) { $sql .= ' AND c.fecha_caja <= ?'; $params[] = $hasta; }
             $sql .= ' ORDER BY c.fecha_caja ASC';
+            if ($ultimos > 0) { $sql .= ' LIMIT ' . (int)$ultimos; }
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
             $cajas = $stmt->fetchAll();
@@ -161,86 +165,68 @@ class ExportController extends Controller
         $plantilla = ROOT_PATH . '/documentos/RCM.xls';
         if (!file_exists($plantilla)) die('Plantilla RCM.xls no encontrada');
 
-        $tempDir = ROOT_PATH;
-        $archivos = [];
+        $reader = IOFactory::createReader('Xls');
+        $reader->setReadDataOnly(false);
+        $spreadsheet = $reader->load($plantilla);
+        $sheet = $spreadsheet->getActiveSheet();
 
-        foreach ($cajas as $caja) {
-            $reader = IOFactory::createReader('Xls');
-            $reader->setReadDataOnly(false);
-            $spreadsheet = $reader->load($plantilla);
-            $sheet = $spreadsheet->getActiveSheet();
-            $highestColIdx = Coordinate::columnIndexFromString($sheet->getHighestColumn());
+        $highestColIdx = Coordinate::columnIndexFromString($sheet->getHighestColumn());
+        if ($highestColIdx > 19) {
+            $sheet->removeColumn('T', $highestColIdx - 19);
+        }
 
-            if ($highestColIdx > 19) {
-                $sheet->removeColumn('T', $highestColIdx - 19);
-            }
+        $highestRow = $sheet->getHighestRow();
+        $headerRow = 0;
+        for ($r = 1; $r <= $highestRow; $r++) {
+            $v = $sheet->getCell("A$r")->getValue();
+            if ($v !== null && strtolower(trim($v)) === 'codpuc') { $headerRow = $r; break; }
+        }
+        if (!$headerRow) $headerRow = 1;
 
-            $highestRow = $sheet->getHighestRow();
-
-            $headerRow = 0;
-            for ($r = 1; $r <= $highestRow; $r++) {
-                $v = $sheet->getCell("A$r")->getValue();
-                if ($v !== null && strtolower(trim($v)) === 'codpuc') { $headerRow = $r; break; }
-            }
-            if (!$headerRow) $headerRow = 1;
-
-            $legalData = [];
-            $foundLegal = false;
-            for ($r = $headerRow + 1; $r <= $highestRow; $r++) {
-                $vM = $sheet->getCell("M$r")->getValue();
-                $vE = $sheet->getCell("E$r")->getValue();
-                if (
-                    ($vE !== null && str_starts_with(strtoupper(trim($vE)), 'RCM')) ||
-                    ($vM !== null && stripos(trim($vM), 'LEGALIZACION') !== false)
-                ) {
-                    if (!$foundLegal) {
-                        for ($c = 1; $c <= 19; $c++) {
-                            $cl = Coordinate::stringFromColumnIndex($c);
-                            $legalData[$c] = $sheet->getCell("$cl$r")->getValue();
-                        }
-                        $foundLegal = true;
-                    }
+        $legalData = [];
+        for ($r = $headerRow + 1; $r <= $highestRow; $r++) {
+            $vM = $sheet->getCell("M$r")->getValue();
+            $vE = $sheet->getCell("E$r")->getValue();
+            if (
+                ($vE !== null && str_starts_with(strtoupper(trim($vE)), 'RCM')) ||
+                ($vM !== null && stripos(trim($vM), 'LEGALIZACION') !== false)
+            ) {
+                for ($c = 1; $c <= 19; $c++) {
+                    $cl = Coordinate::stringFromColumnIndex($c);
+                    $legalData[$c] = $sheet->getCell("$cl$r")->getValue();
                 }
+                break;
             }
+        }
 
-            for ($r = $headerRow + 1; $r <= $highestRow; $r++) {
-                $sheet->removeRow($headerRow + 1, 1);
-            }
+        for ($r = $headerRow + 1; $r <= $highestRow; $r++) {
+            $sheet->removeRow($headerRow + 1, 1);
+        }
 
-            $legalRow = $headerRow + 1;
+        $gastosStmt = $this->pdo->prepare('SELECT g.*, p.nit AS prov_nit
+            FROM gastos g
+            LEFT JOIN proveedores p ON g.proveedor_id = p.id
+            WHERE g.caja_id = ? ORDER BY g.orden DESC, g.id ASC');
 
-            $stmt = $this->pdo->prepare('SELECT g.*, p.nit AS prov_nit
-                FROM gastos g
-                LEFT JOIN proveedores p ON g.proveedor_id = p.id
-                WHERE g.caja_id = ? ORDER BY g.orden DESC, g.id ASC');
-            $stmt->execute([$caja['id']]);
-            $gastos = $stmt->fetchAll();
+        $row = $headerRow;
+        foreach ($cajas as $caja) {
+            $gastosStmt->execute([$caja['id']]);
+            $gastos = $gastosStmt->fetchAll();
 
             $totalDebito = 0;
-            $gastosData = [];
             foreach ($gastos as $g) {
                 $valor = (float)$g['valor'];
                 $totalDebito += $valor;
-                $gastosData[] = [
-                    'tercero' => $g['prov_nit'] ?? '',
-                    'debito'  => $valor,
-                    'detalle' => $g['descripcion'] ?? ''
-                ];
+                $row++;
+                $sheet->setCellValueExplicit("A$row", '', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->setCellValueExplicit("B$row", $g['prov_nit'] ?? '', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->setCellValueExplicit("C$row", '001', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->setCellValue("K$row", $valor);
+                $sheet->setCellValueExplicit("M$row", $g['descripcion'] ?? '', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             }
 
-            if (!empty($gastosData)) {
-                $sheet->insertNewRowBefore($legalRow, count($gastosData));
-                for ($i = 0; $i < count($gastosData); $i++) {
-                    $rn = $headerRow + 1 + $i;
-                    $g = $gastosData[$i];
-                    $sheet->setCellValueExplicit("A$rn", '', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                    $sheet->setCellValueExplicit("B$rn", $g['tercero'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                    $sheet->setCellValueExplicit("C$rn", '001', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                    $sheet->setCellValue("K$rn", $g['debito']);
-                    $sheet->setCellValueExplicit("M$rn", $g['detalle'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                }
-                $legalRow = $headerRow + 1 + count($gastosData);
-            }
+            $row++;
+            $legalRow = $row;
 
             $fo = new \DateTime($caja['fecha_caja']);
             $dia = $fo->format('d');
@@ -248,6 +234,10 @@ class ExportController extends Controller
             $anioNum = $fo->format('Y');
             $textoLegal = "LEGALIZACION REEMBOLSO DE CAJA " . strtoupper($caja['tipo_caja'])
                 . "  $dia  AL $dia  $nomMes  $anioNum";
+
+            if ($row > 1) {
+                $sheet->getStyle('B2:B' . $row)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
+            }
 
             if (!empty($legalData[1]))  $sheet->setCellValueExplicit("A$legalRow", $legalData[1], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             if (!empty($legalData[2]))  $sheet->setCellValueExplicit("B$legalRow", $legalData[2], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
@@ -258,37 +248,36 @@ class ExportController extends Controller
             $sheet->setCellValue("K$legalRow", 0);
             $sheet->setCellValue("L$legalRow", $totalDebito);
             $sheet->setCellValueExplicit("M$legalRow", $textoLegal, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-
-            $out = "$tempDir/syscafe_{$caja['id']}.xls";
-            $writer = new XlsWriter($spreadsheet);
-            $writer->save($out);
-            $archivos[] = $out;
         }
 
-        if (count($archivos) === 1) {
-            header('Content-Type: application/vnd.ms-excel');
-            header('Content-Disposition: attachment; filename="' . basename($archivos[0]) . '"');
-            header('Content-Length: ' . filesize($archivos[0]));
-            readfile($archivos[0]);
-            @unlink($archivos[0]);
-            exit;
+        if ($cajaId) {
+            $f = $cajas[0];
+            $nombreArchivo = 'syscafe_' . strtoupper($f['tipo_caja']) . '_' . $f['fecha_caja'];
+        } else {
+            $nombreArchivo = 'syscafe_' . $tipo;
+            if ($desde && $hasta) $nombreArchivo .= '_' . $desde . '_' . $hasta;
+            elseif ($mes > 0) $nombreArchivo .= '_' . $mesesEsp[$mes];
+            elseif ($anio > 0) $nombreArchivo .= '_' . $anio;
+            elseif ($ultimos > 0) $nombreArchivo .= '_ultimos_' . $ultimos;
         }
 
-        $zipFile = "$tempDir/syscafe_cajas.zip";
-        $zip = new \ZipArchive();
-        if ($zip->open($zipFile, \ZipArchive::CREATE) === true) {
-            foreach ($archivos as $f) { $zip->addFile($f, basename($f)); }
-            $zip->close();
-            foreach ($archivos as $f) @unlink($f);
-            header('Content-Type: application/zip');
-            header('Content-Disposition: attachment; filename="syscafe_cajas.zip"');
-            header('Content-Length: ' . filesize($zipFile));
-            readfile($zipFile);
-            @unlink($zipFile);
-            exit;
-        }
+        $tempDir = sys_get_temp_dir() ?: ROOT_PATH;
+        $outFile = rtrim($tempDir, DIRECTORY_SEPARATOR) . '/syscafe_' . uniqid('', true) . '.xls';
 
-        foreach ($archivos as $f) @unlink($f);
-        die('Error al generar archivos');
+        $sheet->getAutoFilter()->setRange('A1:S' . $row);
+
+        $writer = new XlsxWriter($spreadsheet);
+        $writer->save($outFile);
+
+        while (ob_get_level() > 0) ob_end_clean();
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $nombreArchivo . '.xlsx"');
+        header('Content-Length: ' . filesize($outFile));
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        @readfile($outFile);
+        @unlink($outFile);
+        exit;
     }
 }
