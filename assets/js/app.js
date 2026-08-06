@@ -1,3 +1,26 @@
+// Se registra en FASE DE CAPTURA y ANTES de que Bootstrap inicialice sus datos-data-api
+// (este código corre al cargar el script, antes de DOMContentLoaded). Así, al hacer clic en
+// un botón con contraseña, este handler frena el evento y el handler de Bootstrap NO llega a
+// ocultar el modal de detalle.
+document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-clave][data-bs-target]') : null;
+    if (!btn) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (typeof window.__abrirConClave === 'function') {
+        window.__abrirConClave(btn, e);
+    }
+}, true);
+
+// Mientras el overlay de contraseña está abierto, se frena la propagación de los eventos
+// de foco. Sin esto, el focus trap del modal de detalle (Bootstrap 5.3, _enforceFocus)
+// le quita el foco al input del overlay, que está FUERA del modal, y no se puede escribir.
+document.addEventListener('focusin', function (e) {
+    var ov = document.getElementById('claveOverlay');
+    if (!ov || ov.style.display === 'none') return;
+    e.stopPropagation();
+}, true);
+
 document.addEventListener('DOMContentLoaded', function () {
 
     // === MODAL GASTO (crear/editar) ===
@@ -8,6 +31,156 @@ document.addEventListener('DOMContentLoaded', function () {
     const gastoSoporteFoto = document.getElementById('gastoSoporteFoto');
     const gastoFotoPreview = document.getElementById('gastoFotoPreview');
     let gastoTipoActual = 'menor';
+
+    // === Evitar doble envío del formulario de gasto (clicks repetidos) ===
+    const gastoForm = document.getElementById('gastoForm');
+    if (gastoForm) {
+        gastoForm.addEventListener('submit', function () {
+            const btn = gastoForm.querySelector('button[type="submit"]');
+            if (btn) btn.disabled = true;
+        });
+    }
+
+    // === Contraseña para modificar cajas cerradas ===
+    // Pedir la contraseña ANTES de abrir el modal de edición (antes de llenar campos).
+    // Se usa un OVERLAY propio (no window.prompt ni modal de Bootstrap) para que al
+    // cancelar SOLO se cierre el overlay y el detalle permanezca intacto.
+
+    // Muestra el overlay de contraseña y llama cb(true, pwd) si es correcta o cb(false) si se cancela.
+    // Maneja Escape/Enter a nivel de documento mientras el overlay está abierto,
+    // para que NUNCA se propaguen y cierren el modal de detalle.
+    var clavePendiente = null; // { ok, cancel }
+    var claveKeydown = function (e) {
+        var ov = document.getElementById('claveOverlay');
+        if (!ov || ov.style.display === 'none') return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (clavePendiente) clavePendiente.cancel();
+        } else if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'claveInput') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (clavePendiente) clavePendiente.ok();
+        }
+    };
+    document.addEventListener('keydown', claveKeydown, true);
+
+    function pedirClave(cb) {
+        var overlay = document.getElementById('claveOverlay');
+        if (!overlay) { cb(false); return; }
+        if (overlay.style.display === 'flex') return;   // ya hay una petición en curso
+        var input = document.getElementById('claveInput');
+        var err = document.getElementById('claveError');
+        var aceptar = document.getElementById('claveAceptar');
+        var cancelar = document.getElementById('claveCancelar');
+        var PWD = window.__CLAVE || '1234';
+        overlay.style.display = 'flex';
+        err.style.display = 'none';
+        input.value = '';
+        function limpiar() {
+            overlay.style.display = 'none';
+            overlay.onclick = null;
+            aceptar.onclick = null;
+            cancelar.onclick = null;
+            clavePendiente = null;
+        }
+        function ok() {
+            if (input.value === PWD) {
+                limpiar();
+                cb(true, input.value);
+            } else {
+                err.style.display = 'block';
+                input.select();
+            }
+        }
+        clavePendiente = { ok: ok, cancel: function () { limpiar(); cb(false); } };
+        aceptar.onclick = ok;
+        cancelar.onclick = clavePendiente.cancel;
+        overlay.onclick = function (e) {
+            if (e.target === overlay) clavePendiente.cancel();
+        };
+        input.onkeydown = null;
+        setTimeout(function () { input.focus(); }, 50);
+    }
+
+// El handler real (fase captura) está registrado arriba; aquí solo lo configuramos.
+    // Pedimos la contraseña ANTES de abrir el modal de edición y solo lo abrimos si es correcta;
+    // al cancelar NO se toca el modal de detalle.
+    window.__abrirConClave = function (btn) {
+        var target = btn.getAttribute('data-bs-target');
+        pedirClave(function (valida, pwdVal) {
+            if (!valida) return;                    // canceló: NO toco el detalle
+            var modalEl = document.querySelector(target);
+            if (!modalEl) return;
+            var f = modalEl.querySelector('form');
+            if (f) {
+                var inp = f.querySelector('input[name="pwd"]');
+                if (!inp) {
+                    inp = document.createElement('input');
+                    inp.type = 'hidden';
+                    inp.name = 'pwd';
+                    f.appendChild(inp);
+                }
+                inp.value = pwdVal;
+                f.dataset.claveOk = '1';
+            }
+            if (window.bootstrap && window.bootstrap.Modal) {
+                // Se cierra el detalle para que quede visible únicamente el modal de edición
+                // (al guardar, el servidor redirige a historial&detalle=... y se reabre solo).
+                var detEl = document.getElementById('detalleModal');
+                var detInstance = detEl ? bootstrap.Modal.getInstance(detEl) : null;
+                if (detInstance && detInstance._isShown !== false) detInstance.hide();
+                // El modal de edición se abre tras cerrar el detalle.
+                bootstrap.Modal.getOrCreateInstance(modalEl).show(btn);
+            }
+        });
+    };
+
+    // Robustez adicional: impedir que el modal se abra si la contraseña no fue validada,
+    // incluso si otro código intenta mostrarlo. Solo se permite si form.dataset.claveOk === '1'.
+    var modalesGated = {};
+    Array.prototype.forEach.call(
+        document.querySelectorAll('[data-clave][data-bs-target]'),
+        function (btn) {
+            var target = btn.getAttribute('data-bs-target');
+            if (target) modalesGated[target] = true;
+        }
+    );
+    Object.keys(modalesGated).forEach(function (selector) {
+        var modalEl = document.querySelector(selector);
+        if (!modalEl) return;
+        modalEl.addEventListener('show.bs.modal', function (event) {
+            var f = modalEl.querySelector('form');
+            if (f && f.dataset.claveOk !== '1') {
+                event.preventDefault();
+            }
+        });
+    });
+
+    // Fallback: si el formulario llegara a enviarse sin contraseña (cajas cerradas)
+    document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (!form || form.tagName !== 'FORM') return;
+        if ((form.getAttribute('method') || 'get').toLowerCase() !== 'post') return;
+        if (form.dataset.claveOk === '1' || form.querySelector('input[name="pwd"]')) return;
+        var requiere = form.hasAttribute('data-clave') || window.__claveRequerida;
+        if (!requiere) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        pedirClave(function (valida, pwdVal) {
+            if (!valida) return;
+            var inp = form.querySelector('input[name="pwd"]');
+            if (!inp) {
+                inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'pwd';
+                form.appendChild(inp);
+            }
+            inp.value = pwdVal;
+            form.dataset.claveOk = '1';
+            form.requestSubmit();
+        });
+    }, true);
 
     function validarValorGasto() {
         if (!gastoValor || !gastoValorMsg) return;
@@ -169,16 +342,42 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (soportes.length > 0) {
                     sopExistentes.style.display = '';
                     soportes.forEach(function(s) {
-                        var html = '<div class="form-check mb-1">';
-                        html += '<input class="form-check-input" type="checkbox" name="eliminar_soporte[]" value="' + s.id + '" id="delSop' + s.id + '">';
-                        html += '<label class="form-check-label" for="delSop' + s.id + '">';
+                        var html = '<div class="d-flex align-items-center gap-2 mb-1" id="sopRow' + s.id + '">';
+                        html += '<span class="flex-grow-1">';
                         if (s.archivo) {
                             html += '<img src="' + s.archivo + '" class="img-thumbnail me-1" style="max-height:28px" alt=""> ';
                         }
                         html += (s.tipo || 'otro') + (s.descripcion ? ' - ' + s.descripcion : '');
                         html += ' <a href="' + (s.archivo || '#') + '" target="_blank" class="text-muted"><i class="bi bi-box-arrow-up-right"></i></a>';
-                        html += '</label></div>';
-                        sopLista.innerHTML += html;
+                        html += '</span>';
+                        html += '<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 btn-del-soporte" data-sop="' + s.id + '" title="Eliminar soporte"><i class="bi bi-trash"></i></button>';
+                        html += '</div>';
+                        sopLista.insertAdjacentHTML('beforeend', html);
+                    });
+                    Array.from(sopLista.querySelectorAll('.btn-del-soporte')).forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            var sopId = btn.getAttribute('data-sop');
+                            var gastoId = (document.getElementById('gastoId') || {}).value || '';
+                            if (!window.confirm('¿Eliminar este soporte?')) return;
+                            var body = new URLSearchParams({ action: 'eliminar_soporte', sop_id: sopId, gasto_id: gastoId });
+                            fetch(window.location.href, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                body: body
+                            }).then(function(r) { return r.json(); }).then(function(res) {
+                                if (res && res.success) {
+                                    var row = document.getElementById('sopRow' + sopId);
+                                    if (row) row.remove();
+                                    if (sopLista.querySelectorAll('.btn-del-soporte').length === 0) {
+                                        sopExistentes.style.display = 'none';
+                                    }
+                                } else {
+                                    window.alert('No se pudo eliminar el soporte.');
+                                }
+                            }).catch(function() {
+                                window.alert('No se pudo eliminar el soporte.');
+                            });
+                        });
                     });
                 } else {
                     sopExistentes.style.display = 'none';

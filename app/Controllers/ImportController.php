@@ -7,6 +7,21 @@ use App\Models\Caja;
 
 class ImportController extends Controller
 {
+    public function plantilla()
+    {
+        $file = ROOT_PATH . '/documentos/CAJA MENOR 02 - 31 MAYO 2026.xlsx';
+        if (!file_exists($file)) {
+            http_response_code(404);
+            echo 'No se encontró la plantilla.';
+            return;
+        }
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="CAJA_MENOR_PLANTILLA.xlsx"');
+        header('Content-Length: ' . filesize($file));
+        readfile($file);
+        exit;
+    }
+
     public function index()
     {
         set_time_limit(600);

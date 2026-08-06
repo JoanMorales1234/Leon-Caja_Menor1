@@ -11,6 +11,22 @@ use App\Models\Proveedor;
 
 class HistorialController extends Controller
 {
+    private const CLAVE_MODIFICACION = '1234';
+
+    private function requiereClaveSiCerrada($cajaId)
+    {
+        if (!$cajaId) return;
+        $caja = Caja::findById($this->pdo, (int)$cajaId);
+        if (!$caja || $caja['estado'] !== 'cerrada') return;
+        $pwd = trim((string)($_POST['pwd'] ?? ''));
+        if ($pwd === '') {
+            throw new \Exception('Esta caja está cerrada. Ingresa la contraseña para modificarla.');
+        }
+        if ($pwd !== self::CLAVE_MODIFICACION) {
+            throw new \Exception('Contraseña incorrecta. No se puede modificar la caja cerrada.');
+        }
+    }
+
     public function index()
     {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -82,10 +98,12 @@ class HistorialController extends Controller
                     $cajaId = intval($_POST['caja_id']);
                     $caja = Caja::findById($this->pdo, $cajaId);
                     if (!$caja) throw new \Exception('Caja no encontrada.');
+                    $this->requiereClaveSiCerrada($cajaId);
                     $nuevoValor = floatval($_POST['valor']);
                     if ($caja['tipo_caja'] === 'menor' && $nuevoValor > 50000) throw new \Exception('El valor excede $50.000. Usa Caja Mayor.');
                     if ($caja['tipo_caja'] === 'mayor' && $nuevoValor <= 50000) throw new \Exception('El valor debe ser mayor a $50.000. Usa Caja Menor.');
-                    Gasto::create($this->pdo, [
+                    Gasto::shiftOrder($this->pdo, $cajaId);
+                    $gastoId = Gasto::create($this->pdo, [
                         'caja_id' => $cajaId,
                         'empleado_id' => $_POST['empleado_id'] ?? '',
                         'proveedor_id' => $_POST['proveedor_id'] ?? '',
@@ -93,7 +111,8 @@ class HistorialController extends Controller
                         'descripcion' => $_POST['descripcion'],
                         'valor' => $nuevoValor,
                     ]);
-                    Caja::recalculateCajaFinal($this->pdo, $cajaId);
+                    $this->guardarSoportes($gastoId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
                     $message = 'Gasto agregado correctamente.';
                     break;
 
@@ -102,6 +121,7 @@ class HistorialController extends Controller
                     $nuevoValor = floatval($_POST['valor']);
                     $gastoActual = Gasto::findById($this->pdo, $gastoId);
                     if (!$gastoActual) throw new \Exception('Gasto no encontrado.');
+                    $this->requiereClaveSiCerrada($gastoActual['caja_id']);
                     $tipoCaja = $gastoActual['tipo_caja'];
                     if ($tipoCaja === 'menor' && $nuevoValor > 50000) throw new \Exception('El valor excede $50.000. Este gasto pertenece a Caja Menor.');
                     if ($tipoCaja === 'mayor' && $nuevoValor <= 50000) throw new \Exception('El valor debe ser mayor a $50.000. Este gasto pertenece a Caja Mayor.');
@@ -114,8 +134,12 @@ class HistorialController extends Controller
                         'descripcion' => $_POST['descripcion'],
                         'valor' => $nuevoValor,
                     ]);
+                    if (!empty($_POST['eliminar_soporte'])) {
+                        Gasto::deleteSoportes($this->pdo, $gastoId, $_POST['eliminar_soporte']);
+                    }
+                    $this->guardarSoportes($gastoId);
                     $cajaId = (int)$gastoActual['caja_id'];
-                    Caja::recalculateCajaFinal($this->pdo, $cajaId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
                     $message = 'Gasto actualizado correctamente.';
                     break;
 
@@ -123,8 +147,9 @@ class HistorialController extends Controller
                     $gastoId = intval($_POST['id']);
                     $cajaId = (int)Gasto::getCajaId($this->pdo, $gastoId);
                     if (!$cajaId) throw new \Exception('Gasto no encontrado.');
+                    $this->requiereClaveSiCerrada($cajaId);
                     Gasto::delete($this->pdo, $gastoId);
-                    Caja::recalculateCajaFinal($this->pdo, $cajaId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
                     $message = 'Gasto eliminado.';
                     break;
 
@@ -132,6 +157,7 @@ class HistorialController extends Controller
                     $cajaId = intval($_POST['caja_id']);
                     $caja = Caja::findById($this->pdo, $cajaId);
                     if (!$caja) throw new \Exception('Caja no encontrada.');
+                    $this->requiereClaveSiCerrada($cajaId);
                     Reintegro::create($this->pdo, [
                         'caja_id' => $cajaId,
                         'valor' => floatval($_POST['valor_reintegro'] ?? 0),
@@ -139,7 +165,7 @@ class HistorialController extends Controller
                         'soporte' => $_POST['soporte_reintegro'] ?? '',
                         'fecha' => $_POST['fecha_reintegro'] ?: date('Y-m-d'),
                     ]);
-                    Caja::recalculateCajaFinal($this->pdo, $cajaId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
                     $message = 'Reintegro agregado correctamente.';
                     break;
 
@@ -147,6 +173,7 @@ class HistorialController extends Controller
                     $reintegroId = intval($_POST['id']);
                     $reintegro = Reintegro::findById($this->pdo, $reintegroId);
                     if (!$reintegro) throw new \Exception('Reintegro no encontrado.');
+                    $this->requiereClaveSiCerrada($reintegro['caja_id']);
                     $fecha = $_POST['fecha_reintegro'] ?? '';
                     if ($fecha && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) throw new \Exception('Fecha inválida.');
                     Reintegro::update($this->pdo, $reintegroId, [
@@ -156,7 +183,7 @@ class HistorialController extends Controller
                         'fecha' => $fecha ?: $reintegro['fecha_reintegro'],
                     ]);
                     $cajaId = (int)$reintegro['caja_id'];
-                    Caja::recalculateCajaFinal($this->pdo, $cajaId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
                     $message = 'Reintegro actualizado correctamente.';
                     break;
 
@@ -164,8 +191,9 @@ class HistorialController extends Controller
                     $reintegroId = intval($_POST['id']);
                     $cajaId = (int)Reintegro::getCajaId($this->pdo, $reintegroId);
                     if (!$cajaId) throw new \Exception('Reintegro no encontrado.');
+                    $this->requiereClaveSiCerrada($cajaId);
                     Reintegro::delete($this->pdo, $reintegroId);
-                    Caja::recalculateCajaFinal($this->pdo, $cajaId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
                     $message = 'Reintegro eliminado.';
                     break;
 
@@ -173,6 +201,7 @@ class HistorialController extends Controller
                     $cajaId = intval($_POST['id']);
                     $caja = Caja::findById($this->pdo, $cajaId);
                     if (!$caja) throw new \Exception('Caja no encontrada.');
+                    $this->requiereClaveSiCerrada($cajaId);
                     $fecha = $_POST['fecha_caja'] ?? '';
                     $valorInicial = floatval($_POST['valor_inicial'] ?? $caja['valor_inicial']);
                     if ($fecha && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) throw new \Exception('Fecha inválida.');
@@ -182,15 +211,24 @@ class HistorialController extends Controller
                     }
                     $stmt = $this->pdo->prepare('UPDATE cajas SET fecha_caja = ?, valor_inicial = ? WHERE id = ?');
                     $stmt->execute([$fecha ?: $caja['fecha_caja'], $valorInicial, $cajaId]);
-                    Caja::recalculateCajaFinal($this->pdo, $cajaId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
                     $message = 'Caja actualizada correctamente.';
                     break;
 
                 case 'eliminar_caja':
+                    $this->requiereClaveSiCerrada(intval($_POST['id']));
                     Caja::deleteCaja($this->pdo, intval($_POST['id']));
                     $message = 'Caja y sus movimientos eliminados.';
                     $cajaId = 0;
                     break;
+
+                case 'eliminar_soporte':
+                    $gastoId = intval($_POST['gasto_id'] ?? 0);
+                    $sopId = intval($_POST['sop_id'] ?? 0);
+                    if (!$gastoId || !$sopId) throw new \Exception('Datos inválidos.');
+                    Gasto::deleteSoporte($this->pdo, $sopId, $gastoId);
+                    echo json_encode(['success' => true]);
+                    exit;
 
                 default:
                     throw new \Exception('Acción desconocida.');
@@ -227,11 +265,38 @@ class HistorialController extends Controller
         $gastos = $stmt->fetchAll();
         foreach ($gastos as &$g) {
             $sops = Gasto::getSoportes($this->pdo, $g['id']);
+            $g['soportes'] = $sops;
             $g['soportes_json'] = json_encode(array_map(function ($s) {
                 return ['id' => (int)$s['id'], 'tipo' => $s['tipo'], 'descripcion' => $s['descripcion'], 'archivo' => $s['archivo']];
             }, $sops));
         }
         return $gastos;
+    }
+
+    private function guardarSoportes($gastoId)
+    {
+        $ordenSop = 0;
+        if (isset($_FILES['soporte_foto']) && $_FILES['soporte_foto']['error'] === UPLOAD_ERR_OK) {
+            $archivo = handleFotoUpload($_FILES['soporte_foto']);
+            Gasto::addSoporte($this->pdo, $gastoId, $_POST['tipo_soporte'] ?: 'otro', $archivo, null, $ordenSop++);
+        }
+        if (isset($_FILES['soporte_extra'])) {
+            $descs = $_POST['soporte_extra_desc'] ?? [];
+            foreach ($_FILES['soporte_extra']['error'] as $i => $err) {
+                if ($err === UPLOAD_ERR_OK && !empty($_FILES['soporte_extra']['name'][$i])) {
+                    $file = [
+                        'name' => $_FILES['soporte_extra']['name'][$i],
+                        'type' => $_FILES['soporte_extra']['type'][$i],
+                        'tmp_name' => $_FILES['soporte_extra']['tmp_name'][$i],
+                        'error' => UPLOAD_ERR_OK,
+                        'size' => $_FILES['soporte_extra']['size'][$i],
+                    ];
+                    $archivo = handleFotoUpload($file);
+                    $desc = $descs[$i] ?? '';
+                    Gasto::addSoporte($this->pdo, $gastoId, 'otro', $archivo, $desc, $ordenSop++);
+                }
+            }
+        }
     }
 
     private function getDetalleReintegros($cajaId)

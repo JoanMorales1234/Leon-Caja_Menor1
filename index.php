@@ -2,6 +2,11 @@
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 
+session_start();
+
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
 define('ROOT_PATH', __DIR__);
 define('APP_PATH', __DIR__ . '/app');
 

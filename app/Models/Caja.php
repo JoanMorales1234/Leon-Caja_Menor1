@@ -56,6 +56,33 @@ class Caja
         $stmt->execute([$valorFinal, $cajaId]);
     }
 
+    public static function reconcileFrom($pdo, $cajaId)
+    {
+        $stmt = $pdo->prepare('SELECT tipo_caja, fecha_caja FROM cajas WHERE id = ?');
+        $stmt->execute([$cajaId]);
+        $origen = $stmt->fetch();
+        if (!$origen) return;
+
+        $rows = $pdo->prepare('SELECT * FROM cajas WHERE tipo_caja = ? AND fecha_caja >= ? ORDER BY fecha_caja ASC, id ASC');
+        $rows->execute([$origen['tipo_caja'], $origen['fecha_caja']]);
+        $prevFinal = null;
+        $primero = true;
+        foreach ($rows as $caja) {
+            if (!$primero) {
+                if ((float)$caja['valor_inicial'] !== (float)$prevFinal) {
+                    $u = $pdo->prepare('UPDATE cajas SET valor_inicial = ? WHERE id = ?');
+                    $u->execute([$prevFinal, $caja['id']]);
+                    $caja['valor_inicial'] = $prevFinal;
+                }
+            }
+            self::recalculateCajaFinal($pdo, $caja['id']);
+            $stmt = $pdo->prepare('SELECT valor_final FROM cajas WHERE id = ?');
+            $stmt->execute([$caja['id']]);
+            $prevFinal = (float)$stmt->fetchColumn();
+            $primero = false;
+        }
+    }
+
     public static function closeCaja($pdo, $cajaId)
     {
         $stmt = $pdo->prepare('SELECT id FROM cajas WHERE id = ? AND estado = "abierta"');

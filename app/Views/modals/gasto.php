@@ -2,7 +2,7 @@
 <div class="modal fade" id="modalGasto" tabindex="-1" aria-labelledby="modalGastoLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <form method="post" enctype="multipart/form-data">
+            <form method="post" enctype="multipart/form-data" id="gastoForm">
                 <div class="modal-header">
                     <h5 class="modal-title" id="modalGastoLabel">Agregar gasto</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

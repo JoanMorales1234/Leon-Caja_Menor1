@@ -32,6 +32,14 @@ class CajaController extends Controller
                         echo json_encode(['success' => true]);
                         exit;
 
+                    case 'eliminar_soporte':
+                        $gastoId = intval($_POST['gasto_id'] ?? 0);
+                        $sopId = intval($_POST['sop_id'] ?? 0);
+                        if (!$gastoId || !$sopId) throw new \Exception('Datos inválidos.');
+                        Gasto::deleteSoporte($this->pdo, $sopId, $gastoId);
+                        echo json_encode(['success' => true]);
+                        exit;
+
                     case 'nueva_caja':
                         $tipoCrear = $_POST['tipo'] ?? '';
                         if (!in_array($tipoCrear, ['menor', 'mayor'])) throw new \Exception('Tipo de caja inválido.');
@@ -305,6 +313,21 @@ class CajaController extends Controller
                 $message = $e->getMessage();
                 $type = 'danger';
             }
+
+            // Patrón Post/Redirect/Get: guarda el mensaje en sesión y redirige.
+            // Evita que al recargar (F5) el navegador reenvíe el POST y duplique el gasto.
+            if ($message !== null) {
+                $_SESSION['flash_message'] = $message;
+                $_SESSION['flash_type'] = $type;
+            }
+            $this->redirect('index');
+        }
+
+        // Lee el mensaje flash guardado tras el redirect del POST.
+        if (isset($_SESSION['flash_message'])) {
+            $message = $_SESSION['flash_message'];
+            $type = $_SESSION['flash_type'] ?? 'success';
+            unset($_SESSION['flash_message'], $_SESSION['flash_type']);
         }
 
         $cajaMenor = Caja::getCajaDetails($this->pdo, 'menor');

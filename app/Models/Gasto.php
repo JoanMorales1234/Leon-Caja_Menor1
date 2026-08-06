@@ -86,6 +86,12 @@ class Gasto
         }
     }
 
+    public static function deleteSoporte($pdo, $soporteId, $gastoId)
+    {
+        $stmt = $pdo->prepare('DELETE FROM soportes WHERE id = ? AND gasto_id = ?');
+        $stmt->execute([intval($soporteId), intval($gastoId)]);
+    }
+
     public static function nextSoporteOrden($pdo, $gastoId)
     {
         $stmt = $pdo->prepare('SELECT COALESCE(MAX(orden), -1) + 1 FROM soportes WHERE gasto_id = ?');

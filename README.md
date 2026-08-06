@@ -12,7 +12,6 @@ Sistema de administración de caja menor y mayor con estructura MVC.
 1. Copia el proyecto a `htdocs/Caja-menor1` (o el nombre de carpeta que uses).
 2. Abre en el navegador: `http://localhost/Caja-menor1/index.php`
 3. La primera vez el sistema crea automáticamente la base de datos `caja_menor` y sus tablas.
-4. Para cargar datos de ejemplo usa el enlace **Datos ejemplo** del menú (o `?url=datos/ejemplo`).
 
 ## Estructura del proyecto (MVC)
 
@@ -37,14 +36,12 @@ index.php          # Único punto de entrada (front controller)
 | (vacío)        | Panel principal (cajas/empleados/proveedores/cargos/festivos) |
 | `historial`    | Historial de cajas               |
 | `importar`     | Importar desde Excel             |
+| `importar/plantilla` | Descargar plantilla de importación |
 | `logo`         | Gestión del logo                 |
 | `imprimir`     | Imprimir caja                    |
 | `soportes`     | Imprimir soportes                |
 | `exportar/excel` | Exportar a Excel (.xls)        |
 | `exportar/syscafe` | Exportar para SysCafe         |
-| `datos/ejemplo`| Cargar datos de ejemplo          |
-| `datos/reset`  | Reiniciar la base de datos       |
-| `instalar`     | Página de instalación            |
 
 ## Funcionalidades
 

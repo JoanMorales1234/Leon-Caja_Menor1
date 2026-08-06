@@ -37,6 +37,12 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
 }
 ?>
 
+<?php $cerrado = ($detalleCaja && $detalleCaja['estado'] === 'cerrada'); ?>
+<script>
+    window.__claveRequerida = <?= $cerrado ? 'true' : 'false' ?>;
+    window.__CLAVE = '1234';
+</script>
+
 <style>
     .main-container { max-width: 90% !important; width: 90% !important; }
     .main-title { background: #f8f9fa; padding: 8px 0 6px 0; }
@@ -204,7 +210,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                 </a>
                                                 <?php endif; ?>
                                                 <?php if ($caja['estado'] === 'cerrada'): ?>
-                                                <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar esta caja y todos sus movimientos?')">
+                                                <form method="post" class="d-inline" data-clave="1" onsubmit="return confirm('¿Eliminar esta caja y todos sus movimientos?')">
                                                     <input type="hidden" name="action" value="eliminar_caja">
                                                     <input type="hidden" name="id" value="<?= $caja['id'] ?>">
                                                     <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
@@ -281,7 +287,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                 </a>
                                                 <?php endif; ?>
                                                 <?php if ($caja['estado'] === 'cerrada'): ?>
-                                                <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar esta caja y todos sus movimientos?')">
+                                                <form method="post" class="d-inline" data-clave="1" onsubmit="return confirm('¿Eliminar esta caja y todos sus movimientos?')">
                                                     <input type="hidden" name="action" value="eliminar_caja">
                                                     <input type="hidden" name="id" value="<?= $caja['id'] ?>">
                                                     <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Eliminar"><i class="bi bi-trash"></i></button>
@@ -339,10 +345,11 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                 </div>
 
                 <div class="d-flex justify-content-end gap-2 mb-3">
-                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalEditarCaja"
+                    <button type="button" class="btn btn-sm btn-outline-primary" <?= $cerrado ? '' : 'data-bs-toggle="modal"' ?> data-bs-target="#modalEditarCaja"
                         data-id="<?= $detalleCaja['id'] ?>"
                         data-fecha-caja="<?= htmlspecialchars($detalleCaja['fecha_caja']) ?>"
-                        data-valor-inicial="<?= htmlspecialchars($detalleCaja['valor_inicial']) ?>">
+                        data-valor-inicial="<?= htmlspecialchars($detalleCaja['valor_inicial']) ?>"
+                        <?= $cerrado ? 'data-clave="1"' : '' ?>>
                         <i class="bi bi-pencil-square"></i> Editar datos de la caja
                     </button>
                 </div>
@@ -370,11 +377,12 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                 <div class="tab-content mt-2">
                     <div class="tab-pane fade show active" id="detGastos" role="tabpanel">
                         <div class="d-flex justify-content-end mb-2">
-                            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalGasto"
+                            <button type="button" class="btn btn-sm btn-outline-danger" <?= $cerrado ? '' : 'data-bs-toggle="modal"' ?> data-bs-target="#modalGasto"
                                 data-edit="false"
                                 data-caja-id="<?= $detalleCaja['id'] ?>"
                                 data-tipo="<?= $detalleCaja['tipo_caja'] ?>"
-                                data-fecha-caja="<?= htmlspecialchars($detalleCaja['fecha_caja']) ?>">
+                                data-fecha-caja="<?= htmlspecialchars($detalleCaja['fecha_caja']) ?>"
+                                <?= $cerrado ? 'data-clave="1"' : '' ?>>
                                 <i class="bi bi-plus-lg"></i> Agregar gasto
                             </button>
                         </div>
@@ -405,7 +413,17 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                 <td title="<?= htmlspecialchars(($g['nombres'] ?? '') . ' ' . ($g['apellidos'] ?? '')) ?>"><?= htmlspecialchars(($g['nombres'] ?? '') . ' ' . ($g['apellidos'] ?? '')) ?: '-' ?></td>
                                                 <td title="<?= htmlspecialchars($g['proveedor_nombre'] ?? '') ?>"><?= htmlspecialchars($g['proveedor_nombre'] ?? '') ?: '-' ?></td>
                                                 <td>
-                                                    <?php if ($g['soporte'] && strpos($g['soporte'], 'uploads/') === 0): ?>
+                                                    <?php if (!empty($g['soportes'])): ?>
+                                                        <div class="d-flex flex-wrap gap-1">
+                                                        <?php foreach ($g['soportes'] as $sop): ?>
+                                                            <?php if ($sop['archivo']): ?>
+                                                                <a href="<?= asset(htmlspecialchars($sop['archivo'])) ?>" target="_blank" title="Ver soporte"><img src="<?= asset(htmlspecialchars($sop['archivo'])) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte"></a>
+                                                            <?php elseif ($sop['descripcion']): ?>
+                                                                <small class="text-muted"><?= htmlspecialchars($sop['descripcion']) ?></small>
+                                                            <?php endif; ?>
+                                                        <?php endforeach; ?>
+                                                        </div>
+                                                    <?php elseif ($g['soporte'] && strpos($g['soporte'], 'uploads/') === 0): ?>
                                                         <a href="<?= asset(htmlspecialchars($g['soporte'])) ?>" target="_blank" title="Ver soporte">
                                                             <img src="<?= asset(htmlspecialchars($g['soporte'])) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte">
                                                         </a>
@@ -414,7 +432,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" data-bs-toggle="modal" data-bs-target="#modalGasto"
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" <?= $cerrado ? '' : 'data-bs-toggle="modal"' ?> data-bs-target="#modalGasto"
                                                         data-edit="true"
                                                         data-id="<?= $g['id'] ?>"
                                                         data-caja-id="<?= $detalleCaja['id'] ?>"
@@ -426,6 +444,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                         data-empleado-id="<?= $g['empleado_id'] ?>" data-empleado-nombre="<?= htmlspecialchars(($g['nombres'] ?? '') . ' ' . ($g['apellidos'] ?? '')) ?>"
                                                         data-proveedor-id="<?= $g['proveedor_id'] ?>" data-proveedor-nombre="<?= htmlspecialchars($g['proveedor_nombre'] ?? '') ?>"
                                                         data-soportes='<?= $g['soportes_json'] ?>'
+                                                        <?= $cerrado ? 'data-clave="1"' : '' ?>
                                                         title="Editar gasto"><i class="bi bi-pencil"></i></button>
                                                     <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este gasto?')">
                                                         <input type="hidden" name="action" value="eliminar_gasto">
@@ -442,11 +461,12 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                     </div>
                     <div class="tab-pane fade" id="detReintegros" role="tabpanel">
                         <div class="d-flex justify-content-end mb-2">
-                            <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#modalReintegro"
+                            <button type="button" class="btn btn-sm btn-outline-success" <?= $cerrado ? '' : 'data-bs-toggle="modal"' ?> data-bs-target="#modalReintegro"
                                 data-edit="false"
                                 data-caja-id="<?= $detalleCaja['id'] ?>"
                                 data-tipo="<?= $detalleCaja['tipo_caja'] ?>"
-                                data-fecha-caja="<?= htmlspecialchars($detalleCaja['fecha_caja']) ?>">
+                                data-fecha-caja="<?= htmlspecialchars($detalleCaja['fecha_caja']) ?>"
+                                <?= $cerrado ? 'data-clave="1"' : '' ?>>
                                 <i class="bi bi-plus-lg"></i> Agregar reintegro
                             </button>
                         </div>
@@ -482,7 +502,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" data-bs-toggle="modal" data-bs-target="#modalReintegro"
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" <?= $cerrado ? '' : 'data-bs-toggle="modal"' ?> data-bs-target="#modalReintegro"
                                                         data-edit="true"
                                                         data-id="<?= $r['id'] ?>"
                                                         data-caja-id="<?= $detalleCaja['id'] ?>"
@@ -492,6 +512,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                         data-valor="<?= $r['valor'] ?>"
                                                         data-descripcion="<?= htmlspecialchars($r['descripcion'] ?? '') ?>"
                                                         data-soporte="<?= htmlspecialchars($r['soporte'] ?? '') ?>"
+                                                        <?= $cerrado ? 'data-clave="1"' : '' ?>
                                                         title="Editar reintegro"><i class="bi bi-pencil"></i></button>
                                                     <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar este reintegro?')">
                                                         <input type="hidden" name="action" value="eliminar_reintegro">
@@ -579,3 +600,18 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
 
 <?php include APP_PATH . '/Views/modals/gasto.php'; ?>
 <?php include APP_PATH . '/Views/modals/reintegro.php'; ?>
+
+<!-- Overlay propio de contraseña (presente siempre; se muestra solo cuando hace falta).
+     NO es un modal de Bootstrap para no apilar/cerrar el detalle. -->
+<div id="claveOverlay" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.3);width:340px;max-width:92%;padding:18px;">
+        <h6 class="mb-1"><i class="bi bi-lock-fill text-warning"></i> Caja cerrada</h6>
+        <p class="text-muted small mb-3">Ingresa la contraseña para modificar.</p>
+        <input type="text" id="claveInput" name="clave_overlay" class="form-control mb-3" style="-webkit-text-security:disc" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1password-ignore="true" data-form-type="other" autofocus>
+        <div id="claveError" class="text-danger small mb-2" style="display:none">Contraseña incorrecta.</div>
+        <div class="d-flex justify-content-end gap-2">
+            <button type="button" id="claveCancelar" class="btn btn-secondary btn-sm">Cancelar</button>
+            <button type="button" id="claveAceptar" class="btn btn-primary btn-sm">Continuar</button>
+        </div>
+    </div>
+</div>

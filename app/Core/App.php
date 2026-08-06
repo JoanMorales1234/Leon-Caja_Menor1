@@ -19,14 +19,12 @@ class App
             'proveedores' => ['ProveedorController', 'index'],
             'cargos' => ['CargoController', 'index'],
             'importar' => ['ImportController', 'index'],
+            'importar/plantilla' => ['ImportController', 'plantilla'],
             'logo' => ['LogoController', 'index'],
             'imprimir' => ['PrintController', 'imprimir'],
             'soportes' => ['PrintController', 'soportes'],
             'exportar/excel' => ['ExportController', 'excel'],
             'exportar/syscafe' => ['ExportController', 'syscafe'],
-            'datos/ejemplo' => ['SetupController', 'seed'],
-            'datos/reset' => ['SetupController', 'reset'],
-            'instalar' => ['SetupController', 'install'],
         ];
 
         $route = $url;

@@ -29,8 +29,6 @@
                 <li class="nav-item"><a class="nav-link" href="<?= url('historial') ?>"><i class="bi bi-clock-history"></i> Historial</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= url('importar') ?>"><i class="bi bi-file-earmark-excel"></i> Importar Excel</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= url('logo') ?>"><i class="bi bi-image"></i> Logo</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= url('datos/ejemplo') ?>"><i class="bi bi-database-fill-up"></i> Datos ejemplo</a></li>
-                <li class="nav-item"><a class="nav-link text-danger" href="<?= url('datos/reset') ?>"><i class="bi bi-arrow-counterclockwise"></i> Reset DB</a></li>
             </ul>
         </div>
     </div>

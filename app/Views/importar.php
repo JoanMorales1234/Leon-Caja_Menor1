@@ -6,6 +6,9 @@
     <div class="card shadow-sm">
         <div class="card-body">
             <p class="text-muted">Selecciona un archivo .xls o .xlsx con el formato de CAJA MENOR/MAYOR (una hoja por día).</p>
+            <div class="mb-3">
+                <a href="<?= url('importar/plantilla') ?>" class="btn btn-outline-success"><i class="bi bi-download"></i> Descargar plantilla de importación (.xlsx)</a>
+            </div>
             <form method="post" enctype="multipart/form-data">
                 <div class="mb-3">
                     <label for="archivo" class="form-label">Archivo Excel</label>
