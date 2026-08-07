@@ -26,6 +26,7 @@
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link" href="<?= url('') ?>"><i class="bi bi-house-door"></i> Inicio</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= url('historial') ?>"><i class="bi bi-clock-history"></i> Historial</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= url('importar') ?>"><i class="bi bi-file-earmark-excel"></i> Importar Excel</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= url('logo') ?>"><i class="bi bi-image"></i> Logo</a></li>

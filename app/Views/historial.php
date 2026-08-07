@@ -75,7 +75,6 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
     <?php endif; ?>
     <div class="d-flex justify-content-between align-items-center main-title">
         <h1 class="h5 mb-0"><i class="bi bi-clock-history"></i> Historial de cajas</h1>
-        <a class="btn btn-sm btn-outline-primary" href="<?= url('index') ?>"><i class="bi bi-house"></i> Inicio</a>
     </div>
 
     <div class="card shadow-sm filter-card">

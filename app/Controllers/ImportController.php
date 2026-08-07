@@ -9,14 +9,14 @@ class ImportController extends Controller
 {
     public function plantilla()
     {
-        $file = ROOT_PATH . '/documentos/CAJA MENOR 02 - 31 MAYO 2026.xlsx';
+        $file = ROOT_PATH . '/documentos/CAJA_MENOR.xlsx';
         if (!file_exists($file)) {
             http_response_code(404);
-            echo 'No se encontró la plantilla.';
+            echo 'No se encontró la plantilla de importación en /documentos/CAJA_MENOR.xlsx.';
             return;
         }
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment; filename="CAJA_MENOR_PLANTILLA.xlsx"');
+        header('Content-Disposition: attachment; filename="CAJA_MENOR.xlsx"');
         header('Content-Length: ' . filesize($file));
         readfile($file);
         exit;
@@ -32,10 +32,10 @@ class ImportController extends Controller
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['archivo'])) {
             $archivo = $_FILES['archivo'];
             if ($archivo['error'] !== UPLOAD_ERR_OK) {
-                $message = 'Error al subir el archivo.';
+                $message = 'No se pudo subir el archivo. Verifica que no esté dañado y vuelve a intentarlo.';
                 $type = 'danger';
             } elseif (!in_array(strtolower(pathinfo($archivo['name'], PATHINFO_EXTENSION)), ['xls', 'xlsx'])) {
-                $message = 'Solo se permiten archivos .xls o .xlsx.';
+                $message = 'Formato no válido. Solo se aceptan archivos Excel con extensión .xls o .xlsx.';
                 $type = 'danger';
             } else {
                 $tempDir = ROOT_PATH;
@@ -123,10 +123,10 @@ PS;
                     @unlink($psScriptFile);
 
                     if (strpos(trim($output), 'ERROR') === 0) {
-                        $message = 'Error leyendo Excel: ' . htmlspecialchars($output);
+                        $message = 'No se pudo leer el archivo Excel. Revisa que no esté abierto, que no esté dañado y que sea un archivo válido.';
                         $type = 'danger';
                     } elseif (!file_exists($jsonOutputFile)) {
-                        $message = 'No se pudo leer el archivo Excel (no se generó JSON).';
+                        $message = 'No se pudo procesar el archivo. Excel no devolvió información legible.';
                         $type = 'danger';
                     } else {
                         $lines = file($jsonOutputFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -144,7 +144,7 @@ PS;
                         }
 
                         if (empty($sheets)) {
-                            $message = "Error al interpretar los datos del Excel.";
+                            $message = "No se encontraron hojas válidas en el archivo. Verifica que el Excel tenga pestañas con el formato esperado.";
                             $type = 'danger';
                         } else {
                             $meses = [
@@ -161,14 +161,15 @@ PS;
                                 return $val;
                             };
                             $importados = 0;
-                            $cachedTipo = '';
                             $errores = [];
-                            $mesFiltro = isset($_POST['mes_filtro']) ? intval($_POST['mes_filtro']) : 0;
 
                             foreach ($sheets as $sheet) {
                                 $sheetName = trim(strtoupper($sheet['sheetName']));
                                 $rows = $sheet['rows'] ?? [];
-                                if (count($rows) < 10) continue;
+                                if (count($rows) < 10) {
+                                    $errores[] = "Hoja '$sheetName': tiene muy pocas filas para procesarse.";
+                                    continue;
+                                }
 
                                 $titleVal = '';
                                 $titleRows = [0, 1, 3, 2, 4, 5, 6];
@@ -191,22 +192,8 @@ PS;
                                 if (stripos($titleVal, 'CAJA MENOR') !== false) $tipoCaja = 'menor';
                                 elseif (stripos($titleVal, 'CAJA MAYOR') !== false) $tipoCaja = 'mayor';
                                 if (!$tipoCaja) {
-                                    if ($cachedTipo) {
-                                        $tipoCaja = $cachedTipo;
-                                    } else {
-                                        for ($hi = 6; $hi <= 8; $hi++) {
-                                            if (!isset($rows[$hi])) continue;
-                                            $hText = implode(' ', $rows[$hi]);
-                                            if (preg_match('/FECHA|CEDULA|NIT|MENOR/', $hText)) {
-                                                $tipoCaja = 'menor';
-                                                $cachedTipo = 'menor';
-                                                break;
-                                            }
-                                        }
-                                        if (!$tipoCaja) continue;
-                                    }
-                                } else {
-                                    $cachedTipo = $tipoCaja;
+                                    $errores[] = "Hoja '$sheetName': no se encontró el texto 'CAJA MENOR' o 'CAJA MAYOR' en la columna D.";
+                                    continue;
                                 }
 
                                 $parts = explode(' ', $sheetName);
@@ -220,14 +207,12 @@ PS;
                                     $pU = strtoupper($p);
                                     if (isset($meses[$pU])) { $mes = $meses[$pU]; break; }
                                 }
-                                if (!$dia || !$mes || !$anio) { $errores[] = "Hoja '$sheetName': fecha inválida"; continue; }
+                                if (!$dia || !$mes || !$anio) { $errores[] = "Hoja '$sheetName': no se pudo leer la fecha desde el nombre de la pestaña. Usa un formato como 'MAYO 02 2026'."; continue; }
                                 $fechaCaja = sprintf('%04d-%02d-%02d', $anio, $mes, $dia);
-
-                                if ($mesFiltro > 0 && $mes !== $mesFiltro) { continue; }
 
                                 $stmt = $this->pdo->prepare('SELECT id FROM cajas WHERE fecha_caja = ? AND tipo_caja = ?');
                                 $stmt->execute([$fechaCaja, $tipoCaja]);
-                                if ($stmt->fetch()) { $errores[] = "Hoja '$sheetName': ya existe caja $tipoCaja para $fechaCaja"; continue; }
+                                if ($stmt->fetch()) { $errores[] = "Hoja '$sheetName': ya existe una caja " . strtoupper($tipoCaja) . " para la fecha $fechaCaja. Se omitió para evitar duplicados."; continue; }
 
                                 $valorInicial = 0;
                                 foreach ($rows as $r) {
@@ -256,6 +241,10 @@ PS;
                                             break;
                                         }
                                     }
+                                }
+                                if ($valorInicial <= 0) {
+                                    $errores[] = "Hoja '$sheetName': no se pudo detectar el valor inicial de la caja.";
+                                    continue;
                                 }
 
                                 $gastosData = [];
@@ -323,7 +312,8 @@ PS;
                                 }
 
                                 if (empty($gastosData) && empty($reintegrosData)) {
-                                    $errores[] = "Hoja '$sheetName': no se encontraron gastos ni reintegros válidos"; continue;
+                                    $errores[] = "Hoja '$sheetName': no se encontraron filas válidas de gastos o reintegros.";
+                                    continue;
                                 }
 
                                 $this->pdo->beginTransaction();
@@ -402,7 +392,7 @@ PS;
                                     $importados++;
                                 } catch (\Exception $e) {
                                     $this->pdo->rollBack();
-                                    $errores[] = "Hoja '$sheetName': " . $e->getMessage();
+                                    $errores[] = "Hoja '$sheetName': no se pudo importar. Detalle: " . $e->getMessage();
                                 }
                             }
 
@@ -411,11 +401,11 @@ PS;
                                 $message = "Importación completada: $importados de $totalHojas hoja(s) importada(s).";
                                 $type = 'success';
                             } else {
-                                $message = "No se importó ninguna caja (de $totalHojas hoja(s) encontradas).";
+                                $message = "No se importó ninguna hoja. Revisa el formato del archivo y corrige los errores mostrados.";
                                 $type = 'warning';
                             }
                             if ($errores) {
-                                $message .= ' | ' . implode(' | ', array_slice($errores, 0, 10));
+                                $message .= ' Errores: ' . implode(' | ', array_slice($errores, 0, 10));
                                 if ($importados == 0) $type = 'danger';
                             }
                         }

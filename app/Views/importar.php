@@ -5,33 +5,16 @@
     <?php endif; ?>
     <div class="card shadow-sm">
         <div class="card-body">
-            <p class="text-muted">Selecciona un archivo .xls o .xlsx con el formato de CAJA MENOR/MAYOR (una hoja por día).</p>
+            <p class="text-muted">Selecciona un archivo .xls o .xlsx con formato de caja menor o caja mayor, usando una hoja por cada día.</p>
             <div class="mb-3">
-                <a href="<?= url('importar/plantilla') ?>" class="btn btn-outline-success"><i class="bi bi-download"></i> Descargar plantilla de importación (.xlsx)</a>
+                <a href="<?= url('importar/plantilla') ?>" class="btn btn-outline-success">
+                    <i class="bi bi-download"></i> Descargar plantilla CAJA_MENOR.xlsx
+                </a>
             </div>
             <form method="post" enctype="multipart/form-data">
                 <div class="mb-3">
                     <label for="archivo" class="form-label">Archivo Excel</label>
                     <input class="form-control" type="file" id="archivo" name="archivo" accept=".xls,.xlsx" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Filtrar por mes</label>
-                    <select class="form-select" name="mes_filtro">
-                        <option value="0" selected>Todos los meses</option>
-                        <option value="1">Enero</option>
-                        <option value="2">Febrero</option>
-                        <option value="3">Marzo</option>
-                        <option value="4">Abril</option>
-                        <option value="5">Mayo</option>
-                        <option value="6">Junio</option>
-                        <option value="7">Julio</option>
-                        <option value="8">Agosto</option>
-                        <option value="9">Septiembre</option>
-                        <option value="10">Octubre</option>
-                        <option value="11">Noviembre</option>
-                        <option value="12">Diciembre</option>
-                    </select>
-                    <small class="form-text text-muted">Si seleccionas un mes, solo se importarán las hojas de ese mes. Si ya existe una caja para una fecha, se salta automáticamente.</small>
                 </div>
                 <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-upload"></i> Importar</button>
                 <a href="<?= url('index') ?>" class="btn btn-secondary">Cancelar</a>
@@ -39,14 +22,17 @@
         </div>
     </div>
     <div class="card shadow-sm mt-3">
-        <div class="card-header bg-white"><h5 class="mb-0">Formato esperado</h5></div>
+        <div class="card-header bg-white"><h5 class="mb-0">Requisitos del archivo</h5></div>
         <div class="card-body">
             <ul class="mb-0">
-                <li>Una hoja por día, nombre de hoja = fecha (ej: "MAYO 02 2026")</li>
-                <li>Fila 4: "CAJA MENOR" o "CAJA MAYOR" (columna D)</li>
-                <li>Fila 7: Encabezados</li>
-                <li>Filas 12+: Datos con fecha, cédula, nombre, funcionario, descripción, NIT, proveedor, valor</li>
-                <li>Empleados y proveedores nuevos se crean automáticamente</li>
+                <li>Archivo en formato <strong>.xls</strong> o <strong>.xlsx</strong>.</li>
+                <li>Una hoja por cada día a importar.</li>
+                <li>El nombre de la hoja debe incluir mes, día y año, por ejemplo: <strong>MAYO 02 2026</strong>.</li>
+                <li>En la columna D debe aparecer <strong>CAJA MENOR</strong> o <strong>CAJA MAYOR</strong>.</li>
+                <li>Debe existir una fila de encabezados antes del bloque de datos.</li>
+                <li>Desde la fila 12 en adelante deben existir datos de fecha, cédula, nombre, cargo, descripción, NIT, proveedor y valor.</li>
+                <li>Si un empleado, cargo o proveedor no existe, el sistema intentará crearlo automáticamente.</li>
+                <li>No deben existir celdas combinadas, subtotales manuales ni filas vacías dentro del bloque de datos.</li>
             </ul>
         </div>
     </div>
