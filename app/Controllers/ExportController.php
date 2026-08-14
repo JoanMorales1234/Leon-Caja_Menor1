@@ -21,8 +21,6 @@ class ExportController extends Controller
         $desde = isset($_GET['desde']) ? $_GET['desde'] : '';
         $hasta = isset($_GET['hasta']) ? $_GET['hasta'] : '';
         $ultimos = isset($_GET['ultimos']) ? intval($_GET['ultimos']) : 0;
-        $pagina = isset($_GET['pagina']) ? max(1, intval($_GET['pagina'])) : 1;
-        $porPagina = 15;
 
         if (!$tipo && !$cajaId) {
             die('Debe especificar ?tipo=menor o ?tipo=mayor, o ?caja_id=N');
@@ -69,10 +67,6 @@ class ExportController extends Controller
                 $params[] = $fechaLimite;
             }
             $sql .= ' ORDER BY c.fecha_caja DESC';
-            if ($ultimos <= 0) {
-                $offset = ($pagina - 1) * $porPagina;
-                $sql .= ' LIMIT ' . (int)$porPagina . ' OFFSET ' . (int)$offset;
-            }
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
             $cajas = $stmt->fetchAll();

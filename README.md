@@ -68,7 +68,8 @@ Genera un archivo `.xls` con el detalle de las cajas y sus movimientos.
 
 - Si envías `caja_id`, exporta una sola caja específica.
 - Si no envías `caja_id`, exporta por `tipo` (`menor` o `mayor`).
-- Soporta filtros opcionales por `estado`, `mes`, `anio`, `desde`, `hasta`, `ultimos` y `pagina`.
+- Soporta filtros opcionales por `estado`, `mes`, `anio`, `desde`, `hasta` y `ultimos`.
+- Exporta **todas** las cajas que coinciden con los filtros (ignora `pagina`), para que el Excel nunca quede incompleto por la paginación del historial.
 - El nombre del archivo cambia según el tipo de caja y el rango de fechas.
 - Se basa en la vista `app/Views/exportar_excel.php`.
 
