@@ -8,6 +8,7 @@ use App\Models\Gasto;
 use App\Models\Reintegro;
 use App\Models\Empleado;
 use App\Models\Proveedor;
+use App\Models\Festivo;
 
 class HistorialController extends Controller
 {
@@ -62,14 +63,15 @@ class HistorialController extends Controller
         $cajasMayor = $resultMayor['cajas'];
         $totalMenor = $resultMenor['total'];
         $totalMayor = $resultMayor['total'];
-        $totalPaginasMenor = $filtroUltimos > 0 ? 1 : max(1, ceil($totalMenor / $porPagina));
-        $totalPaginasMayor = $filtroUltimos > 0 ? 1 : max(1, ceil($totalMayor / $porPagina));
+        $totalPaginasMenor = ($filtroUltimos === -1 || $filtroUltimos > 0) ? 1 : max(1, ceil($totalMenor / $porPagina));
+        $totalPaginasMayor = ($filtroUltimos === -1 || $filtroUltimos > 0) ? 1 : max(1, ceil($totalMayor / $porPagina));
 
         $aniosDisponibles = Caja::getAvailableYears($this->pdo);
         $meses = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
         $diasMesActual = date('t');
         $empleados = Empleado::activeSelect($this->pdo);
         $proveedores = Proveedor::activeSelect($this->pdo);
+        $festivos = Festivo::loadHolidays($this->pdo);
 
         $this->view('layout/header', ['pageTitle' => 'Historial de cajas']);
         $this->view('historial', compact(
@@ -78,7 +80,7 @@ class HistorialController extends Controller
             'cajasMenor', 'cajasMayor', 'totalMenor', 'totalMayor',
             'totalPaginasMenor', 'totalPaginasMayor',
             'aniosDisponibles', 'meses', 'diasMesActual',
-            'empleados', 'proveedores'
+            'empleados', 'proveedores', 'festivos'
         ));
         $this->view('layout/footer');
     }

@@ -182,7 +182,7 @@ class Caja
         $stmt = $pdo->prepare('SELECT nota FROM cajas WHERE id = ?');
         $stmt->execute([$cajaId]);
         $row = $stmt->fetch();
-        return $row ? $row['nota'] : '';
+        return $row ? (string)$row['nota'] : '';
     }
 
     public static function saveNota($pdo, $cajaId, $nota)
@@ -245,6 +245,8 @@ class Caja
 
         if ($ultimos > 0) {
             $sql .= ' LIMIT ' . (int)$ultimos;
+        } elseif ($ultimos === -1) {
+            // "Todos": sin paginación ni límite
         } else {
             $offset = ($pagina - 1) * $porPagina;
             $sql .= ' LIMIT ' . (int)$porPagina . ' OFFSET ' . (int)$offset;
@@ -255,7 +257,7 @@ class Caja
         $cajas = $stmt->fetchAll();
 
         $totalRegistros = 0;
-        if ($ultimos <= 0) {
+        if ($ultimos <= 0 && $ultimos !== -1) {
             $totalRegistros = (int)$pdo->query('SELECT FOUND_ROWS()')->fetchColumn();
         }
 

@@ -32,6 +32,19 @@ document.addEventListener('DOMContentLoaded', function () {
     const gastoFotoPreview = document.getElementById('gastoFotoPreview');
     let gastoTipoActual = 'menor';
 
+    // Devuelve el último día hábil (ignora domingos y festivos) en formato YYYY-MM-DD.
+    // Si hoy es 1, retrocede hasta el último día hábil del mes anterior.
+    function ultimoDiaHabil() {
+        var d = new Date();
+        var festivos = Array.isArray(window.__FESTIVOS) ? window.__FESTIVOS : [];
+        var dia;
+        do {
+            d.setDate(d.getDate() - 1);
+            dia = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        } while (d.getDay() === 0 || festivos.indexOf(dia) !== -1);
+        return dia;
+    }
+
     // === Evitar doble envío del formulario de gasto (clicks repetidos) ===
     const gastoForm = document.getElementById('gastoForm');
     if (gastoForm) {
@@ -327,11 +340,6 @@ document.addEventListener('DOMContentLoaded', function () {
             const titulo = isEdit ? 'Editar gasto' : 'Agregar gasto';
             document.getElementById('modalGastoLabel').textContent = titulo + ' - Caja ' + (gastoTipoActual === 'menor' ? 'Menor' : 'Mayor');
 
-            if (gastoFecha) {
-                var fechaGastoAttr = isEdit ? btn.getAttribute('data-fecha-gasto') : null;
-                gastoFecha.value = (isEdit && fechaGastoAttr) ? fechaGastoAttr : (fechaCaja || new Date().toISOString().split('T')[0]);
-            }
-
             var sopExistentes = document.getElementById('soportesExistentes');
             var sopLista = document.getElementById('soportesLista');
             sopLista.innerHTML = '';
@@ -397,6 +405,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 setSearchDropdown('gastoProveedor', '', '');
                 if (gastoSoporteFoto) gastoSoporteFoto.value = '';
                 if (gastoFotoPreview) gastoFotoPreview.innerHTML = '';
+            }
+            if (gastoFecha) {
+                var fechaGastoAttr = isEdit ? (btn.getAttribute('data-fecha-gasto') || btn.getAttribute('data-fecha')) : null;
+                gastoFecha.value = (isEdit && fechaGastoAttr) ? fechaGastoAttr : ultimoDiaHabil();
             }
             limpiarSoportesAdicionales();
             validarValorGasto();

@@ -343,6 +343,7 @@ class CajaController extends Controller
         $todosProveedores = Proveedor::all($this->pdo);
         $todosCargos = Cargo::all($this->pdo);
         $festivosActivos = Festivo::allActive($this->pdo);
+        $festivos = Festivo::loadHolidays($this->pdo);
 
         $this->view('layout/header', compact('message', 'type') + ['pageTitle' => 'Sistema de Caja Menor / Mayor']);
         $this->view('index', compact(
@@ -351,7 +352,7 @@ class CajaController extends Controller
             'movimientosMenor', 'movimientosMayor',
             'empleados', 'proveedores', 'cargos',
             'todosEmpleados', 'todosProveedores', 'todosCargos',
-            'festivosActivos'
+            'festivosActivos', 'festivos'
         ));
         $this->view('layout/footer');
     }

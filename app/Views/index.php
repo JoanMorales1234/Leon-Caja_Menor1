@@ -125,15 +125,15 @@
                                                 <?php foreach ($movimientosMenor['gastos'] as $gasto): ?>
                                                     <tr data-id="<?= $gasto['id'] ?>">
                                                         <td class="drag-handle text-center"><i class="bi bi-grip-vertical"></i></td>
-                                                        <td><?= htmlspecialchars($gasto['fecha_gasto']) ?></td>
-                                                        <td><?= htmlspecialchars($gasto['descripcion']) ?>
+                                                        <td><?= htmlspecialchars($gasto['fecha_gasto'] ?? '') ?></td>
+                                                        <td><?= htmlspecialchars($gasto['descripcion'] ?? '') ?>
                                                             <?php if (!empty($gasto['soportes'])): ?>
                                                                 <br><div class="d-flex flex-wrap gap-1">
                                                                 <?php foreach ($gasto['soportes'] as $sop): ?>
                                                                     <?php if ($sop['archivo']): ?>
                                                                         <a href="<?= asset($sop['archivo']) ?>" target="_blank" title="Ver soporte"><img src="<?= asset($sop['archivo']) ?>" class="img-thumbnail" style="max-height:35px" alt="Soporte"></a>
                                                                     <?php elseif ($sop['descripcion']): ?>
-                                                                        <small class="text-muted"><?= htmlspecialchars($sop['descripcion']) ?></small>
+                                                                        <small class="text-muted"><?= htmlspecialchars($sop['descripcion'] ?? '') ?></small>
                                                                     <?php endif; ?>
                                                                 <?php endforeach; ?>
                                                                 </div>
@@ -152,7 +152,7 @@
                                                                 data-proveedor-id="<?= $gasto['proveedor_id'] ?>"
                                                                 data-proveedor-nombre="<?= htmlspecialchars($gasto['proveedor_nombre'] ?? '', ENT_QUOTES) ?>"
                                                                 data-fecha="<?= $gasto['fecha_gasto'] ?>"
-                                                                data-descripcion="<?= htmlspecialchars($gasto['descripcion'], ENT_QUOTES) ?>"
+                                                                data-descripcion="<?= htmlspecialchars($gasto['descripcion'] ?? '', ENT_QUOTES) ?>"
                                                                 data-valor="<?= $gasto['valor'] ?>"
                                                                 data-soportes='<?= htmlspecialchars(json_encode($gasto['soportes']), ENT_QUOTES) ?>'>
                                                                 <i class="bi bi-pencil"></i>
@@ -210,9 +210,9 @@
                                             <tbody>
                                                 <?php foreach ($movimientosMenor['reintegros'] as $reintegro): ?>
                                                     <tr>
-                                                        <td><?= htmlspecialchars($reintegro['fecha_reintegro']) ?></td>
-                                                        <td><?= htmlspecialchars($reintegro['descripcion']) ?>
-                                                            <?php if ($reintegro['soporte']): ?><br><small class="text-muted"><?= htmlspecialchars($reintegro['soporte']) ?></small><?php endif; ?>
+                                                        <td><?= htmlspecialchars($reintegro['fecha_reintegro'] ?? '') ?></td>
+                                                        <td><?= htmlspecialchars($reintegro['descripcion'] ?? '') ?>
+                                                            <?php if ($reintegro['soporte']): ?><br><small class="text-muted"><?= htmlspecialchars($reintegro['soporte'] ?? '') ?></small><?php endif; ?>
                                                         </td>
                                                         <td class="text-success fw-semibold"><?= number_format($reintegro['valor'], 2, ',', '.') ?></td>
                                                         <td>
@@ -340,15 +340,15 @@
                                                 <?php foreach ($movimientosMayor['gastos'] as $gasto): ?>
                                                     <tr data-id="<?= $gasto['id'] ?>">
                                                         <td class="drag-handle text-center"><i class="bi bi-grip-vertical"></i></td>
-                                                        <td><?= htmlspecialchars($gasto['fecha_gasto']) ?></td>
-                                                        <td><?= htmlspecialchars($gasto['descripcion']) ?>
+                                                        <td><?= htmlspecialchars($gasto['fecha_gasto'] ?? '') ?></td>
+                                                        <td><?= htmlspecialchars($gasto['descripcion'] ?? '') ?>
                                                             <?php if (!empty($gasto['soportes'])): ?>
                                                                 <br><div class="d-flex flex-wrap gap-1">
                                                                 <?php foreach ($gasto['soportes'] as $sop): ?>
                                                                     <?php if ($sop['archivo']): ?>
                                                                         <a href="<?= asset($sop['archivo']) ?>" target="_blank" title="Ver soporte"><img src="<?= asset($sop['archivo']) ?>" class="img-thumbnail" style="max-height:35px" alt="Soporte"></a>
                                                                     <?php elseif ($sop['descripcion']): ?>
-                                                                        <small class="text-muted"><?= htmlspecialchars($sop['descripcion']) ?></small>
+                                                                        <small class="text-muted"><?= htmlspecialchars($sop['descripcion'] ?? '') ?></small>
                                                                     <?php endif; ?>
                                                                 <?php endforeach; ?>
                                                                 </div>
@@ -367,7 +367,7 @@
                                                                 data-proveedor-id="<?= $gasto['proveedor_id'] ?>"
                                                                 data-proveedor-nombre="<?= htmlspecialchars($gasto['proveedor_nombre'] ?? '', ENT_QUOTES) ?>"
                                                                 data-fecha="<?= $gasto['fecha_gasto'] ?>"
-                                                                data-descripcion="<?= htmlspecialchars($gasto['descripcion'], ENT_QUOTES) ?>"
+                                                                data-descripcion="<?= htmlspecialchars($gasto['descripcion'] ?? '', ENT_QUOTES) ?>"
                                                                 data-valor="<?= $gasto['valor'] ?>"
                                                                 data-soportes='<?= htmlspecialchars(json_encode($gasto['soportes']), ENT_QUOTES) ?>'>
                                                                 <i class="bi bi-pencil"></i>
@@ -425,9 +425,9 @@
                                             <tbody>
                                                 <?php foreach ($movimientosMayor['reintegros'] as $reintegro): ?>
                                                     <tr>
-                                                        <td><?= htmlspecialchars($reintegro['fecha_reintegro']) ?></td>
-                                                        <td><?= htmlspecialchars($reintegro['descripcion']) ?>
-                                                            <?php if ($reintegro['soporte']): ?><br><small class="text-muted"><?= htmlspecialchars($reintegro['soporte']) ?></small><?php endif; ?>
+                                                        <td><?= htmlspecialchars($reintegro['fecha_reintegro'] ?? '') ?></td>
+                                                        <td><?= htmlspecialchars($reintegro['descripcion'] ?? '') ?>
+                                                            <?php if ($reintegro['soporte']): ?><br><small class="text-muted"><?= htmlspecialchars($reintegro['soporte'] ?? '') ?></small><?php endif; ?>
                                                         </td>
                                                         <td class="text-success fw-semibold"><?= number_format($reintegro['valor'], 2, ',', '.') ?></td>
                                                         <td>

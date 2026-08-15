@@ -1,7 +1,7 @@
 <?php
 function historialFiltros()
 {
-    $keep = ['estado', 'mes', 'anio', 'desde', 'hasta', 'ultimos'];
+    $keep = ['estado', 'mes', 'anio', 'desde', 'hasta', 'ultimos', 'pagina'];
     $out = [];
     foreach ($keep as $k) {
         $v = $_GET[$k] ?? '';
@@ -119,10 +119,11 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                     <label class="form-label small mb-0">Mostrar</label>
                     <select class="form-select form-select-sm" name="ultimos" id="selUltimos">
                         <option value="0" <?= $filtroUltimos === 0 ? 'selected' : '' ?>>Paginado</option>
+                        <option value="-1" <?= $filtroUltimos === -1 ? 'selected' : '' ?>>Todos</option>
                         <option value="<?= $diasMesActual ?>" <?= $filtroUltimos === $diasMesActual ? 'selected' : '' ?>>Últimos <?= $diasMesActual ?> días</option>
-                        <option value="50" <?= $filtroUltimos === 50 ? 'selected' : '' ?>>Últimos 50</option>
                         <option value="100" <?= $filtroUltimos === 100 ? 'selected' : '' ?>>Últimos 100</option>
                         <option value="200" <?= $filtroUltimos === 200 ? 'selected' : '' ?>>Últimos 200</option>
+                        <option value="500" <?= $filtroUltimos === 500 ? 'selected' : '' ?>>Últimos 500</option>
                     </select>
                 </div>
                 <div class="col-auto">
@@ -406,8 +407,8 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                         <?php foreach ($detalleGastos as $i => $g): ?>
                                             <tr>
                                                 <td><?= $i + 1 ?></td>
-                                                <td><?= htmlspecialchars($g['fecha_gasto']) ?></td>
-                                                <td title="<?= htmlspecialchars($g['descripcion'] ?? '') ?>"><?= htmlspecialchars($g['descripcion']) ?></td>
+                                                <td><?= htmlspecialchars($g['fecha_gasto'] ?? '') ?></td>
+                                                <td title="<?= htmlspecialchars($g['descripcion'] ?? '') ?>"><?= htmlspecialchars($g['descripcion'] ?? '') ?></td>
                                                 <td class="text-danger fw-semibold"><?= number_format($g['valor'], 2, ',', '.') ?></td>
                                                 <td title="<?= htmlspecialchars(($g['nombres'] ?? '') . ' ' . ($g['apellidos'] ?? '')) ?>"><?= htmlspecialchars(($g['nombres'] ?? '') . ' ' . ($g['apellidos'] ?? '')) ?: '-' ?></td>
                                                 <td title="<?= htmlspecialchars($g['proveedor_nombre'] ?? '') ?>"><?= htmlspecialchars($g['proveedor_nombre'] ?? '') ?: '-' ?></td>
@@ -416,15 +417,15 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                         <div class="d-flex flex-wrap gap-1">
                                                         <?php foreach ($g['soportes'] as $sop): ?>
                                                             <?php if ($sop['archivo']): ?>
-                                                                <a href="<?= asset(htmlspecialchars($sop['archivo'])) ?>" target="_blank" title="Ver soporte"><img src="<?= asset(htmlspecialchars($sop['archivo'])) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte"></a>
+                                                                <a href="<?= asset(htmlspecialchars($sop['archivo'] ?? '')) ?>" target="_blank" title="Ver soporte"><img src="<?= asset(htmlspecialchars($sop['archivo'] ?? '')) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte"></a>
                                                             <?php elseif ($sop['descripcion']): ?>
-                                                                <small class="text-muted"><?= htmlspecialchars($sop['descripcion']) ?></small>
+                                                                <small class="text-muted"><?= htmlspecialchars($sop['descripcion'] ?? '') ?></small>
                                                             <?php endif; ?>
                                                         <?php endforeach; ?>
                                                         </div>
                                                     <?php elseif ($g['soporte'] && strpos($g['soporte'], 'uploads/') === 0): ?>
-                                                        <a href="<?= asset(htmlspecialchars($g['soporte'])) ?>" target="_blank" title="Ver soporte">
-                                                            <img src="<?= asset(htmlspecialchars($g['soporte'])) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte">
+                                                        <a href="<?= asset(htmlspecialchars($g['soporte'] ?? '')) ?>" target="_blank" title="Ver soporte">
+                                                            <img src="<?= asset(htmlspecialchars($g['soporte'] ?? '')) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte">
                                                         </a>
                                                     <?php else: ?>
                                                         <small><?= htmlspecialchars($g['soporte'] ?: '-') ?></small>
@@ -437,8 +438,8 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                         data-caja-id="<?= $detalleCaja['id'] ?>"
                                                         data-tipo="<?= $detalleCaja['tipo_caja'] ?>"
                                                         data-fecha-caja="<?= htmlspecialchars($detalleCaja['fecha_caja']) ?>"
-                                                        data-fecha-gasto="<?= htmlspecialchars($g['fecha_gasto']) ?>"
-                                                        data-descripcion="<?= htmlspecialchars($g['descripcion']) ?>"
+                                                        data-fecha-gasto="<?= htmlspecialchars($g['fecha_gasto'] ?? '') ?>"
+                                                        data-descripcion="<?= htmlspecialchars($g['descripcion'] ?? '') ?>"
                                                         data-valor="<?= $g['valor'] ?>"
                                                         data-empleado-id="<?= $g['empleado_id'] ?>" data-empleado-nombre="<?= htmlspecialchars(($g['nombres'] ?? '') . ' ' . ($g['apellidos'] ?? '')) ?>"
                                                         data-proveedor-id="<?= $g['proveedor_id'] ?>" data-proveedor-nombre="<?= htmlspecialchars($g['proveedor_nombre'] ?? '') ?>"
@@ -488,13 +489,13 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                         <?php foreach ($detalleReintegros as $i => $r): ?>
                                             <tr>
                                                 <td><?= $i + 1 ?></td>
-                                                <td><?= htmlspecialchars($r['fecha_reintegro']) ?></td>
-                                                <td title="<?= htmlspecialchars($r['descripcion'] ?? '') ?>"><?= htmlspecialchars($r['descripcion']) ?></td>
+                                                <td><?= htmlspecialchars($r['fecha_reintegro'] ?? '') ?></td>
+                                                <td title="<?= htmlspecialchars($r['descripcion'] ?? '') ?>"><?= htmlspecialchars($r['descripcion'] ?? '') ?></td>
                                                 <td class="text-success fw-semibold"><?= number_format($r['valor'], 2, ',', '.') ?></td>
                                                 <td>
                                                     <?php if ($r['soporte'] && strpos($r['soporte'], 'uploads/') === 0): ?>
-                                                        <a href="<?= asset(htmlspecialchars($r['soporte'])) ?>" target="_blank" title="Ver soporte">
-                                                            <img src="<?= asset(htmlspecialchars($r['soporte'])) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte">
+                                                        <a href="<?= asset(htmlspecialchars($r['soporte'] ?? '')) ?>" target="_blank" title="Ver soporte">
+                                                            <img src="<?= asset(htmlspecialchars($r['soporte'] ?? '')) ?>" style="max-height:40px;max-width:80px" class="img-thumbnail" alt="Soporte">
                                                         </a>
                                                     <?php else: ?>
                                                         <small><?= htmlspecialchars($r['soporte'] ?: '-') ?></small>
@@ -507,7 +508,7 @@ function mostrarPaginacionHistorial($pagina, $totalPaginas, $tabId)
                                                         data-caja-id="<?= $detalleCaja['id'] ?>"
                                                         data-tipo="<?= $detalleCaja['tipo_caja'] ?>"
                                                         data-fecha-caja="<?= htmlspecialchars($detalleCaja['fecha_caja']) ?>"
-                                                        data-fecha-reintegro="<?= htmlspecialchars($r['fecha_reintegro']) ?>"
+                                                        data-fecha-reintegro="<?= htmlspecialchars($r['fecha_reintegro'] ?? '') ?>"
                                                         data-valor="<?= $r['valor'] ?>"
                                                         data-descripcion="<?= htmlspecialchars($r['descripcion'] ?? '') ?>"
                                                         data-soporte="<?= htmlspecialchars($r['soporte'] ?? '') ?>"

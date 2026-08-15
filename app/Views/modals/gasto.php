@@ -1,4 +1,7 @@
 <!-- MODAL GASTO -->
+<script>
+window.__FESTIVOS = <?= json_encode($festivos ?? []) ?>;
+</script>
 <div class="modal fade" id="modalGasto" tabindex="-1" aria-labelledby="modalGastoLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">

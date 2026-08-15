@@ -134,7 +134,7 @@
             <?php if ($notaGuardada): ?>
             <div class="nota-caja">
                 <div class="label">NOTA:</div>
-                <div><?= nl2br(htmlspecialchars($notaGuardada)) ?></div>
+                <div><?= nl2br(htmlspecialchars(trim(preg_replace('/\s+/', ' ', $notaGuardada)))) ?></div>
             </div>
             <?php endif; ?>
             <div class="footer">
@@ -152,7 +152,7 @@
 
     <div class="no-print" style="margin-top:12px;padding:10px;background:#f8f9fa;border:1px solid #ddd;border-radius:4px;">
         <form method="post" style="display:flex;gap:6px;align-items:flex-start;">
-            <textarea name="nota_caja" rows="2" style="flex:1;padding:6px;font-size:13px;border:1px solid #ccc;border-radius:4px;" placeholder="Escribe una nota general para esta caja..."><?= htmlspecialchars($notaGuardada) ?></textarea>
+            <textarea name="nota_caja" rows="2" style="flex:1;padding:6px;font-size:13px;border:1px solid #ccc;border-radius:4px;" placeholder="Escribe una nota general para esta caja..."><?= htmlspecialchars($notaGuardada ?? '') ?></textarea>
             <button type="submit" name="guardar_nota" style="padding:6px 16px;font-size:13px;cursor:pointer;background:#198754;color:#fff;border:none;border-radius:4px;white-space:nowrap;">Guardar nota</button>
             <?php if ($notaGuardada): ?>
             <button type="submit" name="eliminar_nota" style="padding:6px 16px;font-size:13px;cursor:pointer;background:#dc3545;color:#fff;border:none;border-radius:4px;white-space:nowrap;" onclick="return confirm('Eliminar la nota?')">Eliminar nota</button>
