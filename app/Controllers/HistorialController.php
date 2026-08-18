@@ -1,0 +1,310 @@
+<?php
+
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Models\Caja;
+use App\Models\Gasto;
+use App\Models\Reintegro;
+use App\Models\Empleado;
+use App\Models\Proveedor;
+use App\Models\Festivo;
+
+class HistorialController extends Controller
+{
+    private const CLAVE_MODIFICACION = '1234';
+
+    private function requiereClaveSiCerrada($cajaId)
+    {
+        if (!$cajaId) return;
+        $caja = Caja::findById($this->pdo, (int)$cajaId);
+        if (!$caja || $caja['estado'] !== 'cerrada') return;
+        $pwd = trim((string)($_POST['pwd'] ?? ''));
+        if ($pwd === '') {
+            throw new \Exception('Esta caja está cerrada. Ingresa la contraseña para modificarla.');
+        }
+        if ($pwd !== self::CLAVE_MODIFICACION) {
+            throw new \Exception('Contraseña incorrecta. No se puede modificar la caja cerrada.');
+        }
+    }
+
+    public function index()
+    {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $this->handlePost();
+            return;
+        }
+
+        $detalleId = isset($_GET['detalle']) ? intval($_GET['detalle']) : 0;
+        $detalleCaja = null;
+        $detalleGastos = [];
+        $detalleReintegros = [];
+
+        if ($detalleId) {
+            $detalleCaja = Caja::findById($this->pdo, $detalleId);
+            if ($detalleCaja) {
+                $detalleGastos = $this->getDetalleGastos($detalleId);
+                $detalleReintegros = $this->getDetalleReintegros($detalleId);
+            }
+        }
+
+        $filtroEstado = isset($_GET['estado']) && in_array($_GET['estado'], ['abierta', 'cerrada', 'todas']) ? $_GET['estado'] : 'todas';
+        $filtroMes = isset($_GET['mes']) ? intval($_GET['mes']) : 0;
+        $filtroAnio = isset($_GET['anio']) ? intval($_GET['anio']) : 0;
+        $filtroDesde = isset($_GET['desde']) ? $_GET['desde'] : '';
+        $filtroHasta = isset($_GET['hasta']) ? $_GET['hasta'] : '';
+        $filtroUltimos = isset($_GET['ultimos']) ? intval($_GET['ultimos']) : 0;
+        $pagina = isset($_GET['pagina']) ? max(1, intval($_GET['pagina'])) : 1;
+        $porPagina = 15;
+
+        $resultMenor = Caja::paginate($this->pdo, 'menor', $filtroEstado, $filtroMes, $filtroAnio, $filtroDesde, $filtroHasta, $filtroUltimos, $pagina, $porPagina);
+        $resultMayor = Caja::paginate($this->pdo, 'mayor', $filtroEstado, $filtroMes, $filtroAnio, $filtroDesde, $filtroHasta, $filtroUltimos, $pagina, $porPagina);
+        $cajasMenor = $resultMenor['cajas'];
+        $cajasMayor = $resultMayor['cajas'];
+        $totalMenor = $resultMenor['total'];
+        $totalMayor = $resultMayor['total'];
+        $totalPaginasMenor = ($filtroUltimos === -1 || $filtroUltimos > 0) ? 1 : max(1, ceil($totalMenor / $porPagina));
+        $totalPaginasMayor = ($filtroUltimos === -1 || $filtroUltimos > 0) ? 1 : max(1, ceil($totalMayor / $porPagina));
+
+        $aniosDisponibles = Caja::getAvailableYears($this->pdo);
+        $meses = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        $diasMesActual = date('t');
+        $empleados = Empleado::activeSelect($this->pdo);
+        $proveedores = Proveedor::activeSelect($this->pdo);
+        $festivos = Festivo::loadHolidays($this->pdo);
+
+        $this->view('layout/header', ['pageTitle' => 'Historial de cajas']);
+        $this->view('historial', compact(
+            'detalleCaja', 'detalleGastos', 'detalleReintegros',
+            'filtroEstado', 'filtroMes', 'filtroAnio', 'filtroDesde', 'filtroHasta', 'filtroUltimos', 'pagina',
+            'cajasMenor', 'cajasMayor', 'totalMenor', 'totalMayor',
+            'totalPaginasMenor', 'totalPaginasMayor',
+            'aniosDisponibles', 'meses', 'diasMesActual',
+            'empleados', 'proveedores', 'festivos'
+        ));
+        $this->view('layout/footer');
+    }
+
+    private function handlePost()
+    {
+        $message = '';
+        $type = 'success';
+        $cajaId = 0;
+
+        try {
+            if (!isset($_POST['action'])) throw new \Exception('Acción no definida.');
+
+            switch ($_POST['action']) {
+
+                case 'agregar_gasto':
+                    $cajaId = intval($_POST['caja_id']);
+                    $caja = Caja::findById($this->pdo, $cajaId);
+                    if (!$caja) throw new \Exception('Caja no encontrada.');
+                    $this->requiereClaveSiCerrada($cajaId);
+                    $nuevoValor = floatval($_POST['valor']);
+                    if ($caja['tipo_caja'] === 'menor' && $nuevoValor > 50000) throw new \Exception('El valor excede $50.000. Usa Caja Mayor.');
+                    if ($caja['tipo_caja'] === 'mayor' && $nuevoValor <= 50000) throw new \Exception('El valor debe ser mayor a $50.000. Usa Caja Menor.');
+                    Gasto::shiftOrder($this->pdo, $cajaId);
+                    $gastoId = Gasto::create($this->pdo, [
+                        'caja_id' => $cajaId,
+                        'empleado_id' => $_POST['empleado_id'] ?? '',
+                        'proveedor_id' => $_POST['proveedor_id'] ?? '',
+                        'fecha_gasto' => $_POST['fecha_gasto'] ?: date('Y-m-d'),
+                        'descripcion' => $_POST['descripcion'],
+                        'valor' => $nuevoValor,
+                    ]);
+                    $this->guardarSoportes($gastoId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
+                    $message = 'Gasto agregado correctamente.';
+                    break;
+
+                case 'editar_gasto':
+                    $gastoId = intval($_POST['id']);
+                    $nuevoValor = floatval($_POST['valor']);
+                    $gastoActual = Gasto::findById($this->pdo, $gastoId);
+                    if (!$gastoActual) throw new \Exception('Gasto no encontrado.');
+                    $this->requiereClaveSiCerrada($gastoActual['caja_id']);
+                    $tipoCaja = $gastoActual['tipo_caja'];
+                    if ($tipoCaja === 'menor' && $nuevoValor > 50000) throw new \Exception('El valor excede $50.000. Este gasto pertenece a Caja Menor.');
+                    if ($tipoCaja === 'mayor' && $nuevoValor <= 50000) throw new \Exception('El valor debe ser mayor a $50.000. Este gasto pertenece a Caja Mayor.');
+                    $fecha = $_POST['fecha_gasto'] ?? '';
+                    if ($fecha && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) throw new \Exception('Fecha inválida.');
+                    Gasto::update($this->pdo, $gastoId, [
+                        'empleado_id' => $_POST['empleado_id'] ?? '',
+                        'proveedor_id' => $_POST['proveedor_id'] ?? '',
+                        'fecha_gasto' => $fecha ?: $gastoActual['fecha_gasto'],
+                        'descripcion' => $_POST['descripcion'],
+                        'valor' => $nuevoValor,
+                    ]);
+                    if (!empty($_POST['eliminar_soporte'])) {
+                        Gasto::deleteSoportes($this->pdo, $gastoId, $_POST['eliminar_soporte']);
+                    }
+                    $this->guardarSoportes($gastoId);
+                    $cajaId = (int)$gastoActual['caja_id'];
+                    Caja::reconcileFrom($this->pdo, $cajaId);
+                    $message = 'Gasto actualizado correctamente.';
+                    break;
+
+                case 'eliminar_gasto':
+                    $gastoId = intval($_POST['id']);
+                    $cajaId = (int)Gasto::getCajaId($this->pdo, $gastoId);
+                    if (!$cajaId) throw new \Exception('Gasto no encontrado.');
+                    $this->requiereClaveSiCerrada($cajaId);
+                    Gasto::delete($this->pdo, $gastoId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
+                    $message = 'Gasto eliminado.';
+                    break;
+
+                case 'agregar_reintegro':
+                    $cajaId = intval($_POST['caja_id']);
+                    $caja = Caja::findById($this->pdo, $cajaId);
+                    if (!$caja) throw new \Exception('Caja no encontrada.');
+                    $this->requiereClaveSiCerrada($cajaId);
+                    Reintegro::create($this->pdo, [
+                        'caja_id' => $cajaId,
+                        'valor' => floatval($_POST['valor_reintegro'] ?? 0),
+                        'descripcion' => $_POST['descripcion_reintegro'] ?? '',
+                        'soporte' => $_POST['soporte_reintegro'] ?? '',
+                        'fecha' => $_POST['fecha_reintegro'] ?: date('Y-m-d'),
+                    ]);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
+                    $message = 'Reintegro agregado correctamente.';
+                    break;
+
+                case 'editar_reintegro':
+                    $reintegroId = intval($_POST['id']);
+                    $reintegro = Reintegro::findById($this->pdo, $reintegroId);
+                    if (!$reintegro) throw new \Exception('Reintegro no encontrado.');
+                    $this->requiereClaveSiCerrada($reintegro['caja_id']);
+                    $fecha = $_POST['fecha_reintegro'] ?? '';
+                    if ($fecha && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) throw new \Exception('Fecha inválida.');
+                    Reintegro::update($this->pdo, $reintegroId, [
+                        'valor' => floatval($_POST['valor_reintegro'] ?? 0),
+                        'descripcion' => $_POST['descripcion_reintegro'] ?? '',
+                        'soporte' => $reintegro['soporte'] ?? '',
+                        'fecha' => $fecha ?: $reintegro['fecha_reintegro'],
+                    ]);
+                    $cajaId = (int)$reintegro['caja_id'];
+                    Caja::reconcileFrom($this->pdo, $cajaId);
+                    $message = 'Reintegro actualizado correctamente.';
+                    break;
+
+                case 'eliminar_reintegro':
+                    $reintegroId = intval($_POST['id']);
+                    $cajaId = (int)Reintegro::getCajaId($this->pdo, $reintegroId);
+                    if (!$cajaId) throw new \Exception('Reintegro no encontrado.');
+                    $this->requiereClaveSiCerrada($cajaId);
+                    Reintegro::delete($this->pdo, $reintegroId);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
+                    $message = 'Reintegro eliminado.';
+                    break;
+
+                case 'editar_caja':
+                    $cajaId = intval($_POST['id']);
+                    $caja = Caja::findById($this->pdo, $cajaId);
+                    if (!$caja) throw new \Exception('Caja no encontrada.');
+                    $this->requiereClaveSiCerrada($cajaId);
+                    $fecha = $_POST['fecha_caja'] ?? '';
+                    $valorInicial = floatval($_POST['valor_inicial'] ?? $caja['valor_inicial']);
+                    if ($fecha && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) throw new \Exception('Fecha inválida.');
+                    if ($fecha && $fecha !== $caja['fecha_caja']
+                        && Caja::existsByDate($this->pdo, $caja['tipo_caja'], $fecha)) {
+                        throw new \Exception("Ya existe una caja de tipo {$caja['tipo_caja']} para esa fecha.");
+                    }
+                    $stmt = $this->pdo->prepare('UPDATE cajas SET fecha_caja = ?, valor_inicial = ? WHERE id = ?');
+                    $stmt->execute([$fecha ?: $caja['fecha_caja'], $valorInicial, $cajaId]);
+                    Caja::reconcileFrom($this->pdo, $cajaId);
+                    $message = 'Caja actualizada correctamente.';
+                    break;
+
+                case 'eliminar_caja':
+                    $this->requiereClaveSiCerrada(intval($_POST['id']));
+                    Caja::deleteCaja($this->pdo, intval($_POST['id']));
+                    $message = 'Caja y sus movimientos eliminados.';
+                    $cajaId = 0;
+                    break;
+
+                case 'eliminar_soporte':
+                    $gastoId = intval($_POST['gasto_id'] ?? 0);
+                    $sopId = intval($_POST['sop_id'] ?? 0);
+                    if (!$gastoId || !$sopId) throw new \Exception('Datos inválidos.');
+                    Gasto::deleteSoporte($this->pdo, $sopId, $gastoId);
+                    echo json_encode(['success' => true]);
+                    exit;
+
+                default:
+                    throw new \Exception('Acción desconocida.');
+            }
+        } catch (\Exception $e) {
+            $message = $e->getMessage();
+            $type = 'danger';
+        }
+
+        $this->redirectHistorial($cajaId, $message, $type);
+    }
+
+    private function redirectHistorial($cajaId, $message, $type)
+    {
+        $qs = [];
+        foreach (['estado', 'mes', 'anio', 'desde', 'hasta', 'ultimos', 'pagina'] as $k) {
+            $v = $_GET[$k] ?? '';
+            if ($v !== '' && $v !== '0') $qs[$k] = $v;
+        }
+        if ($cajaId > 0) $qs['detalle'] = $cajaId;
+        $qs['msg'] = $message;
+        $qs['tipo'] = $type;
+        $this->redirect('historial', $qs);
+    }
+
+    private function getDetalleGastos($cajaId)
+    {
+        $stmt = $this->pdo->prepare('SELECT g.*, e.nombres, e.apellidos, e.cedula, p.nombre AS proveedor_nombre, p.nit AS proveedor_nit
+            FROM gastos g
+            LEFT JOIN empleados e ON g.empleado_id = e.id
+            LEFT JOIN proveedores p ON g.proveedor_id = p.id
+            WHERE g.caja_id = ? ORDER BY g.orden ASC, g.id ASC');
+        $stmt->execute([$cajaId]);
+        $gastos = $stmt->fetchAll();
+        foreach ($gastos as &$g) {
+            $sops = Gasto::getSoportes($this->pdo, $g['id']);
+            $g['soportes'] = $sops;
+            $g['soportes_json'] = json_encode(array_map(function ($s) {
+                return ['id' => (int)$s['id'], 'tipo' => $s['tipo'], 'descripcion' => $s['descripcion'], 'archivo' => $s['archivo']];
+            }, $sops));
+        }
+        return $gastos;
+    }
+
+    private function guardarSoportes($gastoId)
+    {
+        $ordenSop = 0;
+        if (isset($_FILES['soporte_foto']) && $_FILES['soporte_foto']['error'] === UPLOAD_ERR_OK) {
+            $archivo = handleFotoUpload($_FILES['soporte_foto']);
+            Gasto::addSoporte($this->pdo, $gastoId, $_POST['tipo_soporte'] ?: 'otro', $archivo, null, $ordenSop++);
+        }
+        if (isset($_FILES['soporte_extra'])) {
+            $descs = $_POST['soporte_extra_desc'] ?? [];
+            foreach ($_FILES['soporte_extra']['error'] as $i => $err) {
+                if ($err === UPLOAD_ERR_OK && !empty($_FILES['soporte_extra']['name'][$i])) {
+                    $file = [
+                        'name' => $_FILES['soporte_extra']['name'][$i],
+                        'type' => $_FILES['soporte_extra']['type'][$i],
+                        'tmp_name' => $_FILES['soporte_extra']['tmp_name'][$i],
+                        'error' => UPLOAD_ERR_OK,
+                        'size' => $_FILES['soporte_extra']['size'][$i],
+                    ];
+                    $archivo = handleFotoUpload($file);
+                    $desc = $descs[$i] ?? '';
+                    Gasto::addSoporte($this->pdo, $gastoId, 'otro', $archivo, $desc, $ordenSop++);
+                }
+            }
+        }
+    }
+
+    private function getDetalleReintegros($cajaId)
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM reintegros WHERE caja_id = ? ORDER BY creado_en DESC');
+        $stmt->execute([$cajaId]);
+        return $stmt->fetchAll();
+    }
+}
